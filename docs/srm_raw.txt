@@ -1,0 +1,156 @@
+-1080135-127762000INCLUIR LOGO DEL PORTAL
+SINCO SRM – Gestión de relacionamiento de Proveedores
+SINCO SRM es la solución integral para la gestión estratégica del relacionamiento con proveedores y la administración de procesos licitatorios, integrada de forma nativa con SINCO ERP. Permite a las organizaciones fortalecer el control, la trazabilidad y la transparencia en sus procesos de abastecimiento, reduciendo reprocesos y mejorando la eficiencia operativa.
+El módulo facilita la validación y seguimiento de la información y documentación de proveedores, quienes autogestionan sus datos a través del Portal de Proveedores ADPROVEEDOR, garantizando trazabilidad, actualización permanente y una incorporación ordenada al ERP.
+Adicionalmente, SRM integra herramientas avanzadas para la creación y gestión de licitaciones, permitiendo analizar propuestas mediante cuadros comparativos estandarizados, realizar rondas de negociación y adjudicar de manera ágil, generando automáticamente órdenes de compra o contratos en el módulo ADPRO.
+El resultado: mayor control, reducción de reprocesos administrativos y una gestión de compras más estratégica, transparente y eficiente.
+Proceso
+77482708890ADJUDICACIÓN Y GENERACIÓN DE OC Y CONTRATOS- Adjudicación parcial o total a único o varios proponentes.- Generar órdenes de compra o contratos por grupos a partir de las licitaciones.00ADJUDICACIÓN Y GENERACIÓN DE OC Y CONTRATOS- Adjudicación parcial o total a único o varios proponentes.- Generar órdenes de compra o contratos por grupos a partir de las licitaciones.Beneficios
+Ingreso por un único link, lo que permite centralizar todos los procesos de gestión administrativa desde la verificación de proveedores hasta un proceso de abastecimiento.
+Los proveedores harán la autogestión de registro de su información y cargue de documentación a través del portal de proveedores ADPROVEEDOR, la cual será visualizada en tiempo real en el módulo SRM por los usuarios del ERP
+Agrupaciones personalizadas de proveedores
+Personalización de mensajes enviados a los proveedores en las diferentes fases de la gestión de información y las fases de un proceso de licitación
+Repositorio de documentación para la visualización y descarga desde el ERP solicitada a los proveedores
+Integración con herramientas externas para la consulta de listas vinculantes y riesgos en PDF disponible para descarga en formato resumido y detallado desde el ERP
+Bandeja de Oficial de cumplimento, observaciones, cargue de información, aprobación o rechazo.
+Vencimientos del proceso de debida diligencia.
+Recordatorios particulares y masivos por correo hacia los proveedores de acuerdo con la fase de estado de registro
+Rechazos, anulación y desvinculación de invitación de proveedores
+Reintegro Proveedores
+Creación de criterios de evaluación como soporte previo a la inscripción de los nuevos terceros
+Creación de nuevo tercero en el ERP (módulo A&F)
+Flexibilidad para la personalización de flujos de procesos licitatorios respondiendo a las diferentes necesidades organizacionales
+Creación de procesos licitatorios por proyecto
+Licitación de actividades no presupuestadas o basados en el presupuesto inicial o proyectado
+Generación de adendas por cambios de fechas, actividades, inclusión o exclusión de proveedores, que habilitan campos en el portal de proveedores ADPROVEEDOR para ser visualizados y completados por los proveedores
+Gestión de adjuntos como soporte para visualización y descarga por parte de los proveedores desde el portal de proveedores ADPROVEEDOR y solicitud de documentos opcionales u obligatorios adjuntos a la cotización de los proveedores
+Envío de mensajes internos y externos referentes a las diferentes fases de los procesos de licitación
+Mensajería directa entre proveedores y usuarios involucrados en los procesos de licitación
+Agrupación de ofertas económicas en un solo formato con utilidades que permiten a los usuarios realizar análisis visualmente y comparar propuestas
+Posibilidades de abrir rondas de negociación con los proponentes para mejorar las ofertas comerciales mediante el versionamiento de cuadros comparativos
+Adjudicación parcial o total de actividades licitadas a único o múltiples proponentes
+Mediante la asignación presupuestal se indican los ítems e insumos a los que se les imputará un contrato o una orden de compra para seguir su gestión en el módulo ADPRO
+Indicadores de medición de tiempos para detectar rutas críticas del proceso licitatorio
+Monitoreo en tiempo real de los procesos.
+Integración con SINCO ERP
+left4947Registro automático de nuevos terceros en el ERP posterior a procesos de verificación y aprobación en el módulo SRM.
+Visualización en el portal de proveedores de los pagos de facturas
+Descarga de Certificados de retención en la fuente, retención de Iva y retención de Ica, generados en el módulo AYF.
+2707-501Generación automática de órdenes de compra y contratos, partiendo de las actividades e insumos adjudicados a los terceros en los respectivos procesos licitatorios.
+Visualización en el portal de proveedores de los informes de ordenes de compra y contratos
+Visualización en el portal de proveedores del estado de la facturación.
+Funcionalidades
+Gestión de Proveedores.
+Gestión Abastecimiento (Licitaciones)
+Submódulos de SINCO SRM
+ProveedoresProveedores
+El submódulo de Proveedores permite administrar de manera estructurada el ciclo completo de vinculación, actualización y validación de terceros, a través del Portal de Proveedores ADPROVEEDOR.
+Proceso
+Características
+  Parametrización de vencimientos documentales:Configuración de días de vigencia para la documentación solicitada a proveedores, con control automático de expiraciones.
+  Categorización por especialidades:Clasificación de terceros según especialidades o líneas de servicio, permitiendo una gestión segmentada y estructurada.
+  Configuración documental por especialidad:Definición de requisitos documentales específicos según la especialidad del proveedor, diferenciando documentos obligatorios y opcionales.
+  Gestión integral de documentación:Administración, visualización y descarga de documentos tanto de nuevos proveedores como de proveedores existentes.
+  Actualización documental mediante portal ADPROVEEDOR:Invitación a proveedores para autogestión, actualización y cargue de documentación directamente en el portal.
+  Estructuración de flujos de aprobación:Inclusión de múltiples perfiles y niveles de aprobación dentro del proceso de validación de proveedores.
+  Parametrización de criterios evaluativos:Creación de parámetros y reglas para preaprobación automática o asistida de proveedores según políticas internas.
+  Gestión del Oficial de Cumplimiento:Inicio, seguimiento y cierre del proceso de validación por parte del oficial de cumplimiento, con trazabilidad de cada etapa.
+  Generación de rechazos y seguimiento de novedades:Registro estructurado de observaciones, devoluciones o rechazos, con trazabilidad histórica del proceso.
+  Control de invitaciones:
+Anulación de invitaciones activas.
+Reanudación de solicitudes vencidas.
+Seguimiento al estado de cada invitación.
+  Notificaciones y recordatorios automáticos:Generación de alertas y recordatorios individuales o masivos sobre información o documentación pendiente.
+  Trazabilidad y auditoría del proceso:Registro histórico de acciones realizadas durante el ciclo de vinculación y validación del proveedor.
+Opciones
+Invitación y registro
+Invitación de proveedores existentes en el ERP.
+Invitación de nuevos proveedores.
+Autogestión de información y cargue documental desde el portal.
+Reanudación de invitaciones vencidas.
+Anulación de solicitudes.
+Validación y control
+Configuración de documentos requeridos por especialidad.
+Parámetros evaluativos para preaprobación.
+Inclusión de múltiples perfiles en el flujo de aprobación.
+Seguimiento del oficial de cumplimiento.
+Integración con herramienta de validación de listas vinculantes (COMPLIANCE).
+Generación de rechazos y seguimiento de novedades.
+Administración y configuración
+Configuración de días de vencimiento de documentación.
+Categorización de proveedores por especialidades.
+Plantillas de notificación personalizadas.
+Configuración de perfiles de aprobación.
+Declaraciones y autorizaciones.
+Evaluación de proveedores.
+Modificación de usuarios del portal.
+Informes
+Estado de solicitudes.
+Registro de invitaciones enviadas.
+Informe por especialidades.
+Reportes de seguimiento de documentación.
+LicitacionesLicitaciones
+El submódulo de Licitaciones permite gestionar de forma estructurada el proceso de abastecimiento, desde la creación del proceso hasta la adjudicación y generación de compras o contratos.
+El sistema ofrece la flexibilidad de licitar actividades contempladas en presupuesto o proyección, insumos solicitados desde la opción de pedidos proyecto de almacén o licitar actividades que aún no se encuentran en el presupuesto.
+El submódulo fue diseñado para permitir la configuración de diferentes flujos de licitación, según la necesidad, complejidad o flexibilidad de los procesos, contemplando pasos en los cuales intervienen los usuarios involucrados.
+Proceso
+Características
+Creación estructurada de procesos licitatorios:Generación de licitaciones a partir de presupuesto inicial, presupuesto proyectado, actividades no presupuestadas o pedidos de proyecto.
+Parametrización de tipos de licitación:Configuración de diferentes modalidades de proceso según políticas internas (privada, abierta, comparativa, entre otras).
+Definición de flujos y etapas del proceso:Configuración de pasos, responsables y niveles de aprobación dentro del ciclo de la licitación.
+Invitación controlada de proveedores:Selección de proveedores habilitados o no habilitados, con trazabilidad de notificaciones enviadas.
+Gestión de documentación del proceso:Configuración de documentos obligatorios u opcionales requeridos para la presentación de ofertas.
+Recepción digital de cotizaciones:Registro estructurado de propuestas económicas directamente en el portal, con control de fechas y versiones.
+Cuadro comparativo automático:Consolidación automática de ofertas económicas para análisis comparativo por actividad, capítulo o grupo.
+Versionamiento por rondas de negociación:Gestión de múltiples rondas de negociación, conservando historial de cambios y mejoras en las ofertas.
+Negociación individual o masiva:Envío de solicitudes de mejora de oferta de manera puntual o simultánea a varios proponentes.
+Gestión de adendas:Modificación controlada del proceso (fechas, actividades, proveedores invitados), manteniendo trazabilidad.
+Mensajería interna y externa:Comunicación estructurada entre usuarios internos y proveedores participantes.
+Adjudicación parcial o total:Asignación de actividades a uno o varios proveedores, con posibilidad de desadjudicación o reapertura del proceso.
+Asignación presupuestal de actividades adjudicadas:Vinculación directa con el presupuesto del proyecto para control posterior en ejecución.
+Generación automática de órdenes de compra:Creación directa de documentos de compra desde la adjudicación.
+Generación automática de contratos:Creación de contratos vinculados a las actividades adjudicadas.
+Dashboard de seguimiento:Visualización consolidada del estado de los procesos licitatorios.
+Indicadores de gestión y tiempos:Medición de duración por etapa, identificación de rutas críticas y seguimiento de cumplimiento.
+Auditoría y trazabilidad del proceso:Registro histórico de acciones, notificaciones y decisiones tomadas durante la licitación.
+Reportes e informes gerenciales:Generación de reportes de estado, adjudicaciones, tiempos de proceso y comportamiento de ofertas.
+Integración nativa con ERP:Conexión directa con presupuesto, contratos y compras para garantizar coherencia financiera y operativa.
+Opciones
+Creación de procesos licitatorios
+Permite generar licitaciones a partir de:
+Actividades presupuestadas.
+Actividades proyectadas.
+Actividades no presupuestadas.
+Pedidos proyecto.
+Procesos con fines exclusivos de cotización.
+Además, ofrece:
+Configuración de tipos y flujos de licitación.
+Definición de pasos y responsables.
+Parametrización de documentación obligatoria u opcional.
+Invitación de proveedores habilitados o no habilitados.
+Gestión de Cotizaciones
+Recepción y visualización de cotizaciones.
+Cargue de documentos obligatorios u opcionales.
+Consolidación automática en cuadros comparativos.
+Versionamiento por rondas de negociación.
+Negociación puntual o masiva con oferentes.
+Visualización gráfica y análisis comparativo de propuestas.
+Adjudicación y Contratación
+Adjudicación parcial o total.
+Adjudicación a uno o múltiples proponentes.
+Desadjudicación y reapertura de procesos.
+Asignación presupuestal de actividades adjudicadas.
+Generación automática de órdenes de compra.
+Generación automática de contratos.
+Generación por grupos.
+Listado de adjudicaciones.
+Seguimiento y Control
+Dashboard de licitaciones.
+Gestión por estados del proceso.
+Auditoría de notificaciones.
+Validación de tiempos de ejecución por responsable.
+Indicadores de medición de tiempos.
+Gráficos de seguimiento porcentual y por valores.
+AnexosAnexos
+SINCO SRM podrá integrarse con plataformas externas de consulta en listas vinculantes, siempre que dichas herramientas permitan técnicamente la integración con terceros, suministren el API o los servicios web necesarios para su conexión y autoricen formalmente su uso para este fin.
+La adquisición de la licencia, así como los costos asociados a la plataforma de validación seleccionada, son responsabilidad exclusiva de la constructora y no se encuentran incluidos dentro del objeto ni en el valor económico del módulo SINCO SRM, dado que corresponden a soluciones externas y ajenas a SINCOSOFT.

@@ -1,0 +1,29 @@
+# ─── Backend ──────────────────────────────────────────────────────────────────
+backend/DatamartAnalyzer.Api/bin/
+backend/DatamartAnalyzer.Api/obj/
+backend/DatamartAnalyzer.Api/appsettings.Development.json
+backend/DatamartAnalyzer.Api/appsettings.Production.json
+*.user
+*.suo
+.vs/
+
+# ─── Frontend ─────────────────────────────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/.env
+frontend/.env.local
+
+# ─── Docs binarios y extractor compilado ──────────────────────────────────────
+docs/*.docx
+docs/extracted_raw.txt
+docs/extractor/bin/
+docs/extractor/obj/
+
+# ─── IDE ──────────────────────────────────────────────────────────────────────
+.idea/
+**/.idea/
+
+# ─── Sistema ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.log
