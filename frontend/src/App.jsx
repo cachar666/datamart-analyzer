@@ -844,6 +844,7 @@ function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onA
   const [search, setSearch] = useState('')
   const [values, setValues] = useState([])
   const [empresaPorValor, setEmpresaPorValor] = useState({})
+  const [metadataPorValor, setMetadataPorValor] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const searchRef = useRef(null)
@@ -855,6 +856,7 @@ function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onA
         const res = await datamartApi.getFilterValues(dbName, tipo)
         setValues(res.valores || [])
         if (res.empresaPorValor) setEmpresaPorValor(res.empresaPorValor)
+        if (res.metadataPorValor) setMetadataPorValor(res.metadataPorValor)
         if (res.tabla && res.columna) onMeta?.({ tabla: res.tabla, columna: res.columna })
       } catch {
         setError('No se pudieron cargar los valores')
@@ -917,8 +919,16 @@ function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onA
           <p className="text-xs text-gray-600 p-3 text-center">Sin resultados{search ? ` para "${search}"` : ''}</p>
         )}
         {!loading && !error && filtered.map(v => {
+          // Macroproyecto: subtext = empresas, tooltip = empresas
           const empresas = empresaPorValor[v]
-          const tooltip = empresas?.length > 0 ? empresas.join(' · ') : null
+          // Proyecto: subtext = codigo, tooltip = empresa · macroproyecto
+          const meta = metadataPorValor[v]
+          const subtext = empresas?.length > 0
+            ? empresas.join(' · ')
+            : meta?.codigo ?? null
+          const tooltip = meta
+            ? [meta.empresa, meta.macroproyecto].filter(Boolean).join(' · ') || null
+            : (empresas?.length > 0 ? empresas.join(' · ') : null)
           return (
             <label key={v} title={tooltip ?? undefined} className="flex items-center gap-2.5 px-3 py-2 hover:bg-ink-700 cursor-pointer transition-colors group">
               <input
@@ -929,8 +939,8 @@ function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onA
               />
               <div className="flex-1 min-w-0">
                 <span className="text-xs text-gray-300 truncate block">{v}</span>
-                {tooltip && (
-                  <span className="text-[10px] text-gray-600 truncate block leading-tight">{tooltip}</span>
+                {subtext && (
+                  <span className="text-[10px] text-gray-600 truncate block leading-tight">{subtext}</span>
                 )}
               </div>
             </label>
