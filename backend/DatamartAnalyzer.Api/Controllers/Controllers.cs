@@ -149,24 +149,43 @@ public class AnalyzeController : ControllerBase
 
         try
         {
+            _logger.LogInformation("ANALYZE recibido | BD:{db} | filtros:{f} | pregunta:{p}",
+                request.Database,
+                request.ContextoVariables is { Count: > 0 }
+                    ? string.Join("; ", request.ContextoVariables.Select(kv => $"{kv.Key}=[{string.Join(",", kv.Value)}]"))
+                    : "NINGUNO",
+                request.Pregunta[..Math.Min(60, request.Pregunta.Length)]);
+
             // ── Verificar si hay query preconstruida (sin costo de IA) ─────────
             var prebuiltMatch = _prebuilt.Match(request.Pregunta);
             if (prebuiltMatch is not null)
             {
-                _logger.LogInformation("Query preconstruida encontrada para: {pregunta}", request.Pregunta);
-                var queryResult = await _sql.EjecutarQueryAsync(request.Database, prebuiltMatch.Sql);
+                var sqlConFiltros = InjectarFiltrosPrebuilt(prebuiltMatch.Sql, request.ContextoVariables);
+                _logger.LogInformation("Query preconstruida para: {pregunta} | filtros: {f}",
+                    request.Pregunta,
+                    request.ContextoVariables is { Count: > 0 } ? string.Join(", ", request.ContextoVariables.Keys) : "ninguno");
+                var queryResult = await _sql.EjecutarQueryAsync(request.Database, sqlConFiltros);
                 if (queryResult.Exitoso)
                 {
                     return Ok(new AnalyzeResponse(
                         TipoRespuesta: prebuiltMatch.TipoRespuesta,
                         ExplicacionTexto: prebuiltMatch.ExplicacionTexto,
-                        SqlGenerado: prebuiltMatch.Sql,
+                        SqlGenerado: sqlConFiltros,
                         Datos: queryResult.Datos,
                         Grafico: prebuiltMatch.Grafico,
                         MensajeError: null
                     ) { EsPrebuilt = true });
                 }
-                _logger.LogWarning("Query preconstruida falló, fallback a IA. Error: {error}", queryResult.Error);
+                // Prebuilt falló: devolver error sin pasar a IA (las prebuilt nunca deben usar IA)
+                _logger.LogWarning("Query preconstruida falló: {error}", queryResult.Error);
+                return Ok(new AnalyzeResponse(
+                    TipoRespuesta: TipoRespuesta.Error,
+                    ExplicacionTexto: null,
+                    SqlGenerado: sqlConFiltros,
+                    Datos: null,
+                    Grafico: null,
+                    MensajeError: $"Error ejecutando consulta: {queryResult.Error}"
+                ) { EsPrebuilt = true });
             }
             // ────────────────────────────────────────────────────────────────────
             // Si el schema no viene en el request, cargarlo
@@ -299,6 +318,57 @@ public class AnalyzeController : ControllerBase
         }
     }
 
+    /// <summary>
+    /// Inyecta filtros de contexto (proyecto, macroproyecto, empresa) en el SQL pre-construido
+    /// sin usar IA. Los prebuilt siempre hacen JOIN a [ADP_DTM_DIM].[Proyecto] con alias "p".
+    /// </summary>
+    private static string InjectarFiltrosPrebuilt(string sql, Dictionary<string, List<string>>? filtros)
+    {
+        if (filtros is null || filtros.Count == 0) return sql;
+
+        // Mapeo fijo: clave de filtro → columna en la dimensión Proyecto (alias p)
+        var mapColumna = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["proyecto"]      = "Nombre Proyecto",
+            ["macroproyecto"] = "MacroProyecto",
+            ["empresa"]       = "Empresa",
+            ["estado"]        = "Estado",
+        };
+
+        var condiciones = new List<string>();
+        foreach (var (tipo, valores) in filtros)
+        {
+            if (valores is null || valores.Count == 0) continue;
+            if (!mapColumna.TryGetValue(tipo, out var col)) continue;
+            var lista = string.Join(", ", valores.Select(v => $"'{v.Replace("'", "''")}'"));
+            condiciones.Add($"p.[{col}] IN ({lista})");
+        }
+
+        if (condiciones.Count == 0) return sql;
+
+        var clausula = string.Join(" AND ", condiciones);
+
+        // Si ya hay un WHERE, agregar con AND
+        var whereIdx = sql.IndexOf("WHERE", StringComparison.OrdinalIgnoreCase);
+        if (whereIdx >= 0)
+        {
+            // Insertar después del WHERE token y su condición existente
+            var insertPos = whereIdx + "WHERE".Length;
+            return sql[..insertPos] + " " + clausula + " AND" + sql[insertPos..];
+        }
+
+        // Si no hay WHERE, insertar antes del primer GROUP BY u ORDER BY
+        foreach (var keyword in new[] { "GROUP BY", "ORDER BY", "HAVING" })
+        {
+            var idx = sql.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
+            if (idx >= 0)
+                return sql[..idx] + $"WHERE {clausula}\n                    " + sql[idx..];
+        }
+
+        // Sin GROUP BY ni ORDER BY: agregar al final
+        return sql + $"\nWHERE {clausula}";
+    }
+
     private static bool EsErrorDeColumna(string? error) =>
         error != null && (
             error.Contains("nombre de columna") ||
@@ -306,6 +376,131 @@ public class AnalyzeController : ControllerBase
             error.Contains("Invalid column") ||
             error.Contains("no es válido")
         );
+}
+
+// ─── Filters Controller ───────────────────────────────────────────────────────
+
+[ApiController]
+[Route("api/[controller]")]
+public class FiltersController : ControllerBase
+{
+    private readonly ISchemaService _schema;
+    private readonly ISqlServerService _sql;
+
+    public FiltersController(ISchemaService schema, ISqlServerService sql)
+    {
+        _schema = schema;
+        _sql = sql;
+    }
+
+    /// <summary>
+    /// Devuelve los valores distintos de una dimensión (empresa, proyecto, macroproyecto, etc.)
+    /// descubriendo automáticamente la tabla y columna desde los metadatos del schema.
+    /// </summary>
+    [HttpGet("{database}/{tipo}")]
+    public async Task<IActionResult> GetFilterValues(string database, string tipo)
+    {
+        // Validar tipo (solo alfanumérico + guion/barra baja)
+        if (!System.Text.RegularExpressions.Regex.IsMatch(tipo, @"^[a-zA-Z0-9_\-]{1,50}$"))
+            return BadRequest(new { error = "Tipo de filtro inválido." });
+
+        try
+        {
+            // Mapeo explícito para filtros conocidos que viven en [ADP_DTM_DIM].[Proyecto]
+            var mapeoExplicito = new Dictionary<string, (string Tabla, string Columna)>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["proyecto"]      = ("[ADP_DTM_DIM].[Proyecto]", "Nombre Proyecto"),
+                ["macroproyecto"] = ("[ADP_DTM_DIM].[Proyecto]", "MacroProyecto"),
+                ["empresa"]       = ("[ADP_DTM_DIM].[Proyecto]", "Empresa"),
+                ["estado"]        = ("[ADP_DTM_DIM].[Proyecto]", "Estado"),
+            };
+
+            if (mapeoExplicito.TryGetValue(tipo, out var mapeo))
+            {
+                var sqlExplicito = $"SELECT DISTINCT [{mapeo.Columna}] " +
+                                   $"FROM {mapeo.Tabla} " +
+                                   $"WHERE [{mapeo.Columna}] IS NOT NULL " +
+                                   $"ORDER BY [{mapeo.Columna}]";
+                var resExplicito = await _sql.EjecutarQueryAsync(database, sqlExplicito);
+                if (!resExplicito.Exitoso)
+                    return StatusCode(500, new { error = resExplicito.Error });
+
+                var valoresExplicitos = resExplicito.Datos?
+                    .Select(row => row.TryGetValue(mapeo.Columna, out var v) ? v?.ToString() : null)
+                    .Where(v => !string.IsNullOrWhiteSpace(v))
+                    .ToList() ?? new List<string>();
+
+                return Ok(new { tipo, valores = valoresExplicitos, tabla = mapeo.Tabla, columna = mapeo.Columna });
+            }
+
+            var columns = await _schema.ObtenerSchemaAsync(database);
+
+            var keyword = tipo.ToLowerInvariant();
+
+            // 1) Buscar tabla cuyo nombre contenga el keyword
+            var matchingGroup = columns
+                .Where(c => c.TipoObjeto.Equals("DIMENSION", StringComparison.OrdinalIgnoreCase)
+                         && c.NombreTabla.ToLowerInvariant().Contains(keyword))
+                .GroupBy(c => c.NombreTabla)
+                .FirstOrDefault();
+
+            // 2) Si no hay tabla con ese nombre, buscar columna que contenga el keyword en dimensiones
+            SchemaColumn? displayCol;
+            if (matchingGroup != null)
+            {
+                displayCol = matchingGroup
+                    .Where(c => !c.EsLlave &&
+                           (c.TipoCampo.Contains("varchar", StringComparison.OrdinalIgnoreCase) ||
+                            c.TipoCampo.Contains("char", StringComparison.OrdinalIgnoreCase) ||
+                            c.TipoCampo.Contains("nchar", StringComparison.OrdinalIgnoreCase)))
+                    .OrderByDescending(c => c.NombreCampo.Contains("nombre", StringComparison.OrdinalIgnoreCase))
+                    .ThenByDescending(c => c.NombreCampo.Contains("name", StringComparison.OrdinalIgnoreCase))
+                    .FirstOrDefault();
+            }
+            else
+            {
+                // Buscar por nombre de columna que contenga el keyword
+                displayCol = columns
+                    .Where(c => c.TipoObjeto.Equals("DIMENSION", StringComparison.OrdinalIgnoreCase)
+                             && !c.EsLlave
+                             && c.NombreCampo.ToLowerInvariant().Contains(keyword)
+                             && (c.TipoCampo.Contains("varchar", StringComparison.OrdinalIgnoreCase) ||
+                                 c.TipoCampo.Contains("char", StringComparison.OrdinalIgnoreCase) ||
+                                 c.TipoCampo.Contains("nchar", StringComparison.OrdinalIgnoreCase)))
+                    .FirstOrDefault();
+            }
+
+            if (displayCol == null)
+                return NotFound(new { error = $"No se encontró dimensión para '{tipo}'." });
+
+            // NombreTabla ya viene como [esquema].[tabla], NombreCampo sin brackets
+            var sql = $"SELECT DISTINCT [{displayCol.NombreCampo}] " +
+                      $"FROM {displayCol.NombreTabla} " +
+                      $"WHERE [{displayCol.NombreCampo}] IS NOT NULL " +
+                      $"ORDER BY [{displayCol.NombreCampo}]";
+
+            var result = await _sql.EjecutarQueryAsync(database, sql);
+            if (!result.Exitoso)
+                return StatusCode(500, new { error = result.Error });
+
+            var valores = result.Datos?
+                .Select(row => row.TryGetValue(displayCol.NombreCampo, out var v) ? v?.ToString() : null)
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .ToList() ?? new List<string>();
+
+            return Ok(new
+            {
+                tipo,
+                valores,
+                tabla = displayCol.NombreTabla,
+                columna = displayCol.NombreCampo
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { error = ex.Message });
+        }
+    }
 }
 
 // ─── Query Controller (Direct SQL mode) ──────────────────────────────────────

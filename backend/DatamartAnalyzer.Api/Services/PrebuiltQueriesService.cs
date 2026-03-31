@@ -696,6 +696,23 @@ public class PrebuiltQueriesService : IPrebuiltQueriesService
                 ExplicacionTexto: "Las 30 adjudicaciones más recientes con detalle de licitación, proveedor adjudicado y valor.",
                 Grafico: null
             ),
+
+            new(
+                Pregunta: "Listar proyectos con su respectivo estado",
+                Sql: """
+                    SELECT
+                      p.[Codigo Proyecto],
+                      p.[Nombre Proyecto],
+                      p.[Estado],
+                      p.[Empresa],
+                      p.[MacroProyecto]
+                    FROM [ADP_DTM_DIM].[Proyecto] p
+                    ORDER BY p.[Estado], p.[Nombre Proyecto]
+                    """,
+                TipoRespuesta: TipoRespuesta.Tabla,
+                ExplicacionTexto: "Listado de todos los proyectos con su estado actual, empresa y macroproyecto al que pertenecen.",
+                Grafico: null
+            ),
         };
 
         _queries = list.ToDictionary(

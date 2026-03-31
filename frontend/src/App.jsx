@@ -4,7 +4,8 @@ import {
   Table, FileText, AlertCircle, CheckCircle2, Zap,
   RefreshCw, Eye, EyeOff, Code, Server, Layers, Lightbulb,
   Bookmark, BookMarked, Clock, Trash2, PlayCircle, Search,
-  Star, LayoutDashboard, MessageSquare, GripVertical, X
+  Star, LayoutDashboard, MessageSquare, GripVertical, X,
+  SlidersHorizontal
 } from 'lucide-react'
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -745,6 +746,203 @@ function Dashboard({ dashboards, setDashboards, database, onGoConsulta }) {
   )
 }
 
+// ─── Filter Config ────────────────────────────────────────────────────────────
+const FILTER_CONFIG = [
+  { tipo: 'empresa',       label: 'Empresa',   dotBg: 'bg-azure-400',   chipBg: 'bg-azure-900/30',   chipBorder: 'border-azure-500/40',   chipText: 'text-azure-200'   },
+  { tipo: 'proyecto',      label: 'Proyecto',  dotBg: 'bg-emerald-400', chipBg: 'bg-emerald-900/30', chipBorder: 'border-emerald-500/40', chipText: 'text-emerald-200' },
+  { tipo: 'macroproyecto', label: 'Macropro',  dotBg: 'bg-purple-400',  chipBg: 'bg-purple-900/30',  chipBorder: 'border-purple-500/40',  chipText: 'text-purple-200'  },
+  { tipo: 'estado',        label: 'Estado',    dotBg: 'bg-amber-400',   chipBg: 'bg-amber-900/30',   chipBorder: 'border-amber-500/40',   chipText: 'text-amber-200'   },
+]
+
+// ─── Filter Dropdown ──────────────────────────────────────────────────────────
+function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onApply, onClose }) {
+  const [search, setSearch] = useState('')
+  const [values, setValues] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+  const searchRef = useRef(null)
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const dbName = typeof database === 'object' ? database.nombre : database
+        const res = await datamartApi.getFilterValues(dbName, tipo)
+        setValues(res.valores || [])
+        if (res.tabla && res.columna) onMeta?.({ tabla: res.tabla, columna: res.columna })
+      } catch {
+        setError('No se pudieron cargar los valores')
+      } finally {
+        setLoading(false)
+      }
+    }
+    load()
+    setTimeout(() => searchRef.current?.focus(), 50)
+  }, [database, tipo])
+
+  const filtered = values.filter(v => v.toLowerCase().includes(search.toLowerCase()))
+  const allSelected = filtered.length > 0 && filtered.every(v => selected.includes(v))
+
+  const toggle = (v) => onChange(selected.includes(v) ? selected.filter(s => s !== v) : [...selected, v])
+  const toggleAll = () => allSelected
+    ? onChange(selected.filter(s => !filtered.includes(s)))
+    : onChange([...new Set([...selected, ...filtered])])
+
+  return (
+    <div className="absolute top-full mt-1 left-0 w-72 bg-ink-800 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
+      {/* Search */}
+      <div className="p-2 border-b border-gray-700">
+        <div className="flex items-center gap-2 bg-ink-900 border border-gray-700 focus-within:border-azure-500/50 rounded-lg px-2.5 py-1.5 transition-colors">
+          <Search size={12} className="text-gray-500 flex-shrink-0" />
+          <input
+            ref={searchRef}
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder={`Buscar ${label.toLowerCase()}...`}
+            className="flex-1 bg-transparent text-xs text-gray-300 placeholder-gray-600 outline-none"
+          />
+          {search && <button onClick={() => setSearch('')} className="text-gray-600 hover:text-gray-300 text-xs leading-none">✕</button>}
+        </div>
+      </div>
+
+      {/* Select all / Clear */}
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-gray-800">
+        <button onClick={toggleAll} className="text-[11px] text-azure-400 hover:text-azure-300 transition-colors">
+          {allSelected ? 'Deseleccionar todo' : 'Seleccionar todo'}
+        </button>
+        {selected.length > 0 && (
+          <button onClick={() => onChange([])} className="text-[11px] text-red-400 hover:text-red-300 transition-colors">
+            Limpiar ({selected.length})
+          </button>
+        )}
+      </div>
+
+      {/* List */}
+      <div className="max-h-52 overflow-y-auto">
+        {loading && (
+          <div className="flex items-center gap-2 p-4">
+            <Loader2 size={12} className="animate-spin text-azure-400" />
+            <span className="text-xs text-gray-500">Cargando valores...</span>
+          </div>
+        )}
+        {error && <p className="text-xs text-red-400 p-3">{error}</p>}
+        {!loading && !error && filtered.length === 0 && (
+          <p className="text-xs text-gray-600 p-3 text-center">Sin resultados{search ? ` para "${search}"` : ''}</p>
+        )}
+        {!loading && !error && filtered.map(v => (
+          <label key={v} className="flex items-center gap-2.5 px-3 py-2 hover:bg-ink-700 cursor-pointer transition-colors group">
+            <input
+              type="checkbox"
+              checked={selected.includes(v)}
+              onChange={() => toggle(v)}
+              className="w-3.5 h-3.5 rounded accent-blue-500 flex-shrink-0 cursor-pointer"
+            />
+            <span className="text-xs text-gray-300 truncate">{v}</span>
+          </label>
+        ))}
+      </div>
+
+      {/* Footer */}
+      <div className="border-t border-gray-700 px-3 py-2 flex items-center justify-between">
+        <span className="text-[11px] text-gray-600 font-mono">{selected.length} seleccionado{selected.length !== 1 ? 's' : ''}</span>
+        <button
+          onClick={() => { onClose(); onApply?.() }}
+          className="text-xs px-3 py-1 bg-azure-600/20 border border-azure-500/30 text-azure-400 rounded-lg hover:bg-azure-600/30 transition-colors"
+        >
+          Aplicar
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Context Vars Bar ─────────────────────────────────────────────────────────
+function ContextVarsBar({ database, contextVars, onUpdate, onMeta, onApply, onClearAll }) {
+  const [openDropdown, setOpenDropdown] = useState(null)
+  const wrapperRefs = useRef({})
+
+  // Cierra el dropdown si se hace click fuera
+  useEffect(() => {
+    if (!openDropdown) return
+    const handleClick = (e) => {
+      const ref = wrapperRefs.current[openDropdown]
+      if (ref && !ref.contains(e.target)) setOpenDropdown(null)
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [openDropdown])
+
+  const hasAny = FILTER_CONFIG.some(f => (contextVars[f.tipo] || []).length > 0)
+
+  return (
+    <div className="flex items-center gap-1.5 flex-wrap mb-2 min-h-[26px]">
+      <SlidersHorizontal size={11} className="text-gray-600 flex-shrink-0" />
+      {FILTER_CONFIG.map(({ tipo, label, dotBg, chipBg, chipBorder, chipText }) => {
+        const selected = contextVars[tipo] || []
+        const isActive = selected.length > 0
+        const isOpen = openDropdown === tipo
+
+        return (
+          <div
+            key={tipo}
+            ref={el => wrapperRefs.current[tipo] = el}
+            className="relative"
+          >
+            {isActive ? (
+              <div className={`flex items-center gap-1 ${chipBg} border ${chipBorder} rounded-full px-2 py-0.5`}>
+                <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotBg}`} />
+                <button
+                  onClick={() => setOpenDropdown(isOpen ? null : tipo)}
+                  className={`flex items-center gap-1 ${chipText} hover:opacity-80 transition-opacity`}
+                >
+                  <span className="text-[11px] max-w-[90px] truncate">{selected[0]}</span>
+                  {selected.length > 1 && (
+                    <span className="text-[9px] bg-white/20 text-white rounded-full px-1 font-bold">+{selected.length - 1}</span>
+                  )}
+                </button>
+                <button onClick={() => onUpdate(tipo, [])} className="text-gray-600 hover:text-red-400 transition-colors ml-0.5 flex-shrink-0">
+                  <X size={9} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setOpenDropdown(isOpen ? null : tipo)}
+                className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-400 border border-dashed border-gray-700 hover:border-gray-600 rounded-full px-2 py-0.5 transition-colors"
+              >
+                <span className={`w-1 h-1 rounded-full ${dotBg} opacity-60`} />
+                + {label}
+              </button>
+            )}
+
+            {isOpen && (
+              <FilterDropdown
+                tipo={tipo}
+                label={label}
+                database={database}
+                selected={selected}
+                onChange={(vals) => onUpdate(tipo, vals)}
+                onMeta={(meta) => onMeta(tipo, meta)}
+                onApply={onApply}
+                onClose={() => setOpenDropdown(null)}
+              />
+            )}
+          </div>
+        )
+      })}
+
+      {hasAny && (
+        <button
+          onClick={onClearAll}
+          className="text-[10px] text-gray-700 hover:text-red-400 transition-colors ml-1 font-mono"
+          title="Limpiar todos los filtros de contexto"
+        >
+          limpiar todo
+        </button>
+      )}
+    </div>
+  )
+}
+
 // ─── Schema Panel ─────────────────────────────────────────────────────────────
 function SchemaPanel({ schema, vistas, onClose }) {
   const [tab, setTab] = useState('hechos')
@@ -856,6 +1054,7 @@ export default function App() {
   const [refreshingDb, setRefreshingDb] = useState(false)
   const [loadingSchema, setLoadingSchema] = useState(false)
   const [messages, setMessages] = useState([])
+  const messagesRef = useRef([])
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const [showSchema, setShowSchema] = useState(false)
@@ -863,6 +1062,7 @@ export default function App() {
   const [devMode, setDevMode] = useState(false)
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [suggestionTab, setSuggestionTab] = useState('adpro')
+  const [suggestionSearch, setSuggestionSearch] = useState('')
   const [dbSearch, setDbSearch] = useState('')
   const [selectedModel, setSelectedModel] = useState('claude-haiku-4-5-20251001')
   const [modelOpen, setModelOpen] = useState(false)
@@ -873,6 +1073,9 @@ export default function App() {
   const [vistaActiva, setVistaActiva] = useState('consulta')
   const [dashboards, setDashboards] = useState(() => loadDashboards())
   const [favModal, setFavModal] = useState(null) // { titulo, sql, tipoRespuesta, grafico }
+  const [contextVars, setContextVars] = useState({ empresa: [], proyecto: [], macroproyecto: [], estado: [] })
+  const [filterMeta, setFilterMeta] = useState({})
+  const filterMetaRef = useRef({})
   const messagesEndRef = useRef(null)
   const dbSearchRef = useRef(null)
   const inputRef = useRef(null)
@@ -883,6 +1086,7 @@ export default function App() {
   const vistasRef = useRef(vistas)
   const selectedModelRef = useRef(selectedModel)
   const sqlModeRef = useRef(sqlMode)
+  const contextVarsRef = useRef(contextVars)
   useEffect(() => { selectedDbRef.current = selectedDb }, [selectedDb])
   useEffect(() => { sendingRef.current = sending }, [sending])
   useEffect(() => { savedQueriesRef.current = savedQueries }, [savedQueries])
@@ -890,6 +1094,9 @@ export default function App() {
   useEffect(() => { vistasRef.current = vistas }, [vistas])
   useEffect(() => { selectedModelRef.current = selectedModel }, [selectedModel])
   useEffect(() => { sqlModeRef.current = sqlMode }, [sqlMode])
+  useEffect(() => { contextVarsRef.current = contextVars }, [contextVars])
+  useEffect(() => { filterMetaRef.current = filterMeta }, [filterMeta])
+  useEffect(() => { messagesRef.current = messages }, [messages])
 
   // Initial ping only — databases se cargan bajo demanda
   useEffect(() => {
@@ -903,6 +1110,13 @@ export default function App() {
     }
     init()
   }, [])
+
+  useEffect(() => {
+    const handler = (e) => { if (e.key === 'Escape') setShowSuggestions(false) }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [])
+
 
   const cargarBases = async () => {
     setLoadingDb(true)
@@ -941,6 +1155,7 @@ export default function App() {
     setDbOpen(false)
     setMessages([])
     setSchema(null)
+    setContextVars({ empresa: [], proyecto: [], macroproyecto: [], estado: [] })
     setLoadingSchema(true)
     try {
       const ctx = await datamartApi.getSchema(db.nombre)
@@ -1024,13 +1239,24 @@ export default function App() {
           return [...withoutThinking, { role: 'assistant', content: null, response }]
         })
       } else {
+        // Pasar solo los filtros que tienen valores seleccionados
+        const activeFilters = Object.fromEntries(
+          Object.entries(contextVarsRef.current).filter(([, v]) => v.length > 0)
+        )
+        const activeMeta = Object.keys(activeFilters).length > 0
+          ? Object.fromEntries(
+              Object.entries(filterMetaRef.current).filter(([k]) => activeFilters[k])
+            )
+          : null
         const result = await datamartApi.analyze({
           database: currentDb.nombre,
           pregunta,
           schema: schemaRef.current?.columnas || [],
           vistas: vistasRef.current || [],
           historialContexto: null,
-          modelo: selectedModelRef.current
+          modelo: selectedModelRef.current,
+          contextoVariables: Object.keys(activeFilters).length > 0 ? activeFilters : null,
+          filterMeta: activeMeta && Object.keys(activeMeta).length > 0 ? activeMeta : null
         })
         if (result.usage) {
           setSessionUsage(prev => ({
@@ -1107,6 +1333,23 @@ export default function App() {
     setFavModal(null)
   }, [])
 
+  const handleFilterChange = useCallback((tipo, values) => {
+    setContextVars(prev => ({ ...prev, [tipo]: values }))
+  }, [])
+
+  const handleFilterMeta = useCallback((tipo, meta) => {
+    setFilterMeta(prev => ({ ...prev, [tipo]: meta }))
+  }, [])
+
+  const handleFilterClearAll = useCallback(() => {
+    setContextVars({ empresa: [], proyecto: [], macroproyecto: [], estado: [] })
+  }, [])
+
+  const handleFilterApply = useCallback(() => {
+    const lastUserMsg = [...messagesRef.current].reverse().find(m => m.role === 'user')
+    if (lastUserMsg) handleSend(lastUserMsg.content)
+  }, [handleSend])
+
   const handleDeleteSaved = useCallback((id) => {
     setSavedQueries(prev => {
       const next = prev.filter(q => q.id !== id)
@@ -1173,6 +1416,7 @@ export default function App() {
   }, [handleSend])
 
   const suggestionsAdpro = [
+    'Listar proyectos con su respectivo estado',
     '¿Cuál es el costo ejecutado vs presupuestado por proyecto de construcción?',
     '¿Cuáles son los capítulos o ítems de obra con mayor desviación entre presupuesto y ejecución?',
     '¿Qué materiales e insumos tienen mayor consumo en los proyectos activos?',
@@ -1204,7 +1448,7 @@ export default function App() {
 
       {/* Header estilo SincoERP */}
       <header className="flex-shrink-0 border-b border-gray-800/60 px-4" style={{ background: '#1B344C', minHeight: 52 }}>
-        <div className="flex items-center justify-between h-[52px]">
+        <div className="flex items-center justify-between h-[52px] gap-3">
           {/* Logo SINCO + badge ADPRO */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
@@ -1228,13 +1472,13 @@ export default function App() {
             {/* Nav tabs */}
             <div className="flex items-center gap-1 bg-black/20 rounded-lg p-0.5 border border-white/10">
               <button
-                onClick={() => setVistaActiva('consulta')}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${vistaActiva === 'consulta' ? 'bg-white/10 text-white' : 'text-white/50 hover:text-white/80'}`}
+                onClick={() => { setVistaActiva('consulta'); setShowSuggestions(false) }}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${vistaActiva === 'consulta' && !showSuggestions ? 'bg-amber-600/20 text-amber-400 border border-amber-500/30' : 'text-white/50 hover:text-white/80'}`}
               >
                 <MessageSquare size={11} /> Consulta
               </button>
               <button
-                onClick={() => setVistaActiva('dashboard')}
+                onClick={() => { setVistaActiva('dashboard'); setShowSuggestions(false) }}
                 className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all relative ${vistaActiva === 'dashboard' ? 'bg-amber-600/20 text-amber-400 border border-amber-500/30' : 'text-white/50 hover:text-white/80'}`}
               >
                 <LayoutDashboard size={11} /> Dashboard
@@ -1243,6 +1487,13 @@ export default function App() {
                     {dashboards.length}
                   </span>
                 )}
+              </button>
+              <button
+                onClick={() => { setVistaActiva('consulta'); setShowSuggestions(v => !v); setSuggestionSearch('') }}
+                title="Preguntas sugeridas"
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${showSuggestions ? 'bg-amber-600/20 text-amber-300 border border-amber-500/30' : 'text-white/50 hover:text-white/80'}`}
+              >
+                <Lightbulb size={11} /> Sugeridas
               </button>
             </div>
           </div>
@@ -1384,10 +1635,24 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        {/* Filtros de contexto en el header — solo en consulta con BD seleccionada */}
+        {selectedDb && vistaActiva === 'consulta' && !sqlMode && (
+          <div className="border-t border-white/10 py-1.5">
+            <ContextVarsBar
+              database={selectedDb}
+              contextVars={contextVars}
+              onUpdate={handleFilterChange}
+              onMeta={handleFilterMeta}
+              onApply={handleFilterApply}
+              onClearAll={handleFilterClearAll}
+            />
+          </div>
+        )}
       </header>
 
       {/* Body */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
 
         {/* Dashboard View */}
         {vistaActiva === 'dashboard' && (
@@ -1567,44 +1832,91 @@ export default function App() {
               </div>
             )}
 
-            {/* Panel flotante de sugerencias */}
-            {showSuggestions && (
-              <div className="fixed bottom-24 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-40">
-                <div className="bg-ink-800 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden">
-                  <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-700">
+            {/* Panel full-page de sugerencias — placeholder, moved to body level */}
+            {false && (
+              <div>
+                <div className="w-full max-w-3xl bg-ink-900 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100vh - 80px)' }}>
+                  {/* Header */}
+                  <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-800 flex-shrink-0">
                     <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-2">
-                        <Lightbulb size={13} className="text-amber-400" />
-                        <span className="text-xs font-mono text-gray-400 uppercase tracking-wider">Sugerencias</span>
-                      </div>
-                      <div className="flex items-center gap-1 bg-ink-900 rounded-lg p-0.5 border border-gray-700">
-                        <button
-                          onClick={() => setSuggestionTab('adpro')}
-                          className={`px-2.5 py-1 rounded-md text-xs font-mono font-medium transition-all ${suggestionTab === 'adpro' ? 'bg-azure-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                        >ADPRO</button>
-                        <button
-                          onClick={() => setSuggestionTab('srm')}
-                          className={`px-2.5 py-1 rounded-md text-xs font-mono font-medium transition-all ${suggestionTab === 'srm' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                        >SRM</button>
+                      <Lightbulb size={15} className="text-amber-400" />
+                      <span className="text-sm font-semibold text-white">Preguntas sugeridas</span>
+                      <div className="flex items-center gap-1 bg-black/30 rounded-lg p-0.5 border border-gray-700">
+                        <button onClick={() => setSuggestionTab('adpro')}
+                          className={`px-3 py-1 rounded-md text-xs font-mono font-medium transition-all ${suggestionTab === 'adpro' ? 'bg-azure-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+                          ADPRO
+                        </button>
+                        <button onClick={() => setSuggestionTab('srm')}
+                          className={`px-3 py-1 rounded-md text-xs font-mono font-medium transition-all ${suggestionTab === 'srm' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+                          SRM
+                        </button>
                       </div>
                     </div>
-                    <button onClick={() => setShowSuggestions(false)} className="text-gray-600 hover:text-gray-300 text-xs">✕</button>
+                    <button onClick={() => setShowSuggestions(false)} className="text-gray-500 hover:text-gray-200 transition-colors p-1 rounded-lg hover:bg-white/10">
+                      <X size={16} />
+                    </button>
                   </div>
+
+                  {/* Search */}
+                  <div className="px-5 py-3 border-b border-gray-800 flex-shrink-0">
+                    <div className="flex items-center gap-2 bg-ink-800 border border-gray-700 focus-within:border-azure-500/50 rounded-xl px-3 py-2 transition-colors">
+                      <Search size={13} className="text-gray-500 flex-shrink-0" />
+                      <input
+                        autoFocus
+                        type="text"
+                        value={suggestionSearch}
+                        onChange={e => setSuggestionSearch(e.target.value)}
+                        placeholder="Filtrar preguntas..."
+                        className="flex-1 bg-transparent text-sm text-gray-300 placeholder-gray-600 outline-none"
+                      />
+                      {suggestionSearch && (
+                        <button onClick={() => setSuggestionSearch('')} className="text-gray-600 hover:text-gray-300 transition-colors">
+                          <X size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Sin BD warning */}
                   {!selectedDb && (
-                    <div className="flex items-center gap-2 px-4 py-2.5 bg-amber-900/20 border-b border-amber-800/30">
+                    <div className="flex items-center gap-2 px-5 py-2.5 bg-amber-900/20 border-b border-amber-800/30 flex-shrink-0">
                       <AlertCircle size={12} className="text-amber-400 flex-shrink-0" />
                       <span className="text-xs font-mono text-amber-400">Selecciona una base de datos para ejecutar sugerencias</span>
                     </div>
                   )}
-                  <div className="p-2 grid grid-cols-1 gap-1 max-h-72 overflow-y-auto">
-                    {suggestions.map((s, i) => (
-                      <button key={i}
-                        onClick={() => { if (!selectedDb) return; setShowSuggestions(false); handleSuggestion(s) }}
-                        disabled={!selectedDb}
-                        className={`text-left px-3 py-2.5 border border-transparent rounded-xl text-sm transition-all ${selectedDb ? 'hover:bg-ink-700 hover:border-azure-500/30 text-gray-300' : 'text-gray-600 cursor-not-allowed'}`}>
-                        {s}
-                      </button>
-                    ))}
+
+                  {/* Grid de preguntas */}
+                  <div className="overflow-y-auto p-4 flex-1">
+                    {(() => {
+                      const filtered = suggestions.filter(s => !suggestionSearch || s.toLowerCase().includes(suggestionSearch.toLowerCase()))
+                      return filtered.length === 0
+                        ? <p className="text-sm text-gray-600 font-mono text-center py-8">Sin resultados para "{suggestionSearch}"</p>
+                        : (
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                            {filtered.map((s, i) => (
+                              <button key={i}
+                                onClick={() => { if (!selectedDb) return; setShowSuggestions(false); handleSuggestion(s) }}
+                                disabled={!selectedDb}
+                                className={`text-left px-4 py-3 rounded-xl border text-sm transition-all ${
+                                  selectedDb
+                                    ? 'bg-ink-800 border-gray-700 hover:border-azure-500/50 hover:bg-ink-700 text-gray-300 hover:text-white'
+                                    : 'bg-ink-800/50 border-gray-800 text-gray-600 cursor-not-allowed'
+                                }`}>
+                                {s}
+                              </button>
+                            ))}
+                          </div>
+                        )
+                    })()}
+                  </div>
+
+                  {/* Footer count */}
+                  <div className="px-5 py-2 border-t border-gray-800 flex-shrink-0 flex items-center justify-between">
+                    <span className="text-[11px] font-mono text-gray-600">
+                      {suggestions.filter(s => !suggestionSearch || s.toLowerCase().includes(suggestionSearch.toLowerCase())).length} pregunta(s)
+                      {suggestionSearch && ` · filtrando "${suggestionSearch}"`}
+                    </span>
+                    <span className="text-[11px] font-mono text-gray-700">Esc para cerrar</span>
                   </div>
                 </div>
               </div>
@@ -1648,14 +1960,6 @@ export default function App() {
                   <Code size={16} />
                 </button>
                 <button
-                  onClick={() => setShowSuggestions(v => !v)}
-                  title="Sugerencias de preguntas"
-                  disabled={sqlMode}
-                  className={`w-11 h-11 rounded-xl border flex items-center justify-center transition-all flex-shrink-0 ${showSuggestions && !sqlMode ? 'bg-amber-600/20 border-amber-500/40 text-amber-400' : 'bg-ink-800 border-gray-700 text-gray-500 hover:text-amber-400 hover:border-amber-500/40 disabled:opacity-30 disabled:cursor-not-allowed'}`}
-                >
-                  <Lightbulb size={16} />
-                </button>
-                <button
                   onClick={() => setShowHistory(v => !v)}
                   title={`Historial de consultas guardadas (${savedQueries.length})`}
                   className={`w-11 h-11 rounded-xl border flex items-center justify-center transition-all flex-shrink-0 relative ${showHistory ? 'bg-purple-600/20 border-purple-500/40 text-purple-400' : 'bg-ink-800 border-gray-700 text-gray-500 hover:text-purple-400 hover:border-purple-500/40'}`}
@@ -1685,6 +1989,98 @@ export default function App() {
             </p>
           </div>
         </div>
+
+        {/* Panel full-page de sugerencias — sobre el body, respeta el header */}
+        {showSuggestions && (
+          <div className="absolute inset-0 z-40 flex items-start justify-center pt-8 px-4 pb-8"
+            style={{ background: 'rgba(10,14,20,0.88)', backdropFilter: 'blur(4px)' }}
+            onClick={e => { if (e.target === e.currentTarget) setShowSuggestions(false) }}>
+            <div className="w-full max-w-3xl bg-ink-900 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100% - 32px)' }}>
+              {/* Header */}
+              <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-800 flex-shrink-0">
+                <div className="flex items-center gap-3">
+                  <Lightbulb size={15} className="text-amber-400" />
+                  <span className="text-sm font-semibold text-white">Preguntas sugeridas</span>
+                  <div className="flex items-center gap-1 bg-black/30 rounded-lg p-0.5 border border-gray-700">
+                    <button onClick={() => setSuggestionTab('adpro')}
+                      className={`px-3 py-1 rounded-md text-xs font-mono font-medium transition-all ${suggestionTab === 'adpro' ? 'bg-azure-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+                      ADPRO
+                    </button>
+                    <button onClick={() => setSuggestionTab('srm')}
+                      className={`px-3 py-1 rounded-md text-xs font-mono font-medium transition-all ${suggestionTab === 'srm' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
+                      SRM
+                    </button>
+                  </div>
+                </div>
+                <button onClick={() => setShowSuggestions(false)} className="text-gray-500 hover:text-gray-200 transition-colors p-1 rounded-lg hover:bg-white/10">
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Search */}
+              <div className="px-5 py-3 border-b border-gray-800 flex-shrink-0">
+                <div className="flex items-center gap-2 bg-ink-800 border border-gray-700 focus-within:border-azure-500/50 rounded-xl px-3 py-2 transition-colors">
+                  <Search size={13} className="text-gray-500 flex-shrink-0" />
+                  <input
+                    autoFocus
+                    type="text"
+                    value={suggestionSearch}
+                    onChange={e => setSuggestionSearch(e.target.value)}
+                    placeholder="Filtrar preguntas..."
+                    className="flex-1 bg-transparent text-sm text-gray-300 placeholder-gray-600 outline-none"
+                  />
+                  {suggestionSearch && (
+                    <button onClick={() => setSuggestionSearch('')} className="text-gray-600 hover:text-gray-300 transition-colors">
+                      <X size={13} />
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Sin BD warning */}
+              {!selectedDb && (
+                <div className="flex items-center gap-2 px-5 py-2.5 bg-amber-900/20 border-b border-amber-800/30 flex-shrink-0">
+                  <AlertCircle size={12} className="text-amber-400 flex-shrink-0" />
+                  <span className="text-xs font-mono text-amber-400">Selecciona una base de datos para ejecutar sugerencias</span>
+                </div>
+              )}
+
+              {/* Grid */}
+              <div className="overflow-y-auto p-4 flex-1">
+                {(() => {
+                  const filtered = suggestions.filter(s => !suggestionSearch || s.toLowerCase().includes(suggestionSearch.toLowerCase()))
+                  return filtered.length === 0
+                    ? <p className="text-sm text-gray-600 font-mono text-center py-8">Sin resultados para "{suggestionSearch}"</p>
+                    : (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {filtered.map((s, i) => (
+                          <button key={i}
+                            onClick={() => { if (!selectedDb) return; setShowSuggestions(false); handleSuggestion(s) }}
+                            disabled={!selectedDb}
+                            className={`text-left px-4 py-3 rounded-xl border text-sm transition-all ${
+                              selectedDb
+                                ? 'bg-ink-800 border-gray-700 hover:border-azure-500/50 hover:bg-ink-700 text-gray-300 hover:text-white'
+                                : 'bg-ink-800/50 border-gray-800 text-gray-600 cursor-not-allowed'
+                            }`}>
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    )
+                })()}
+              </div>
+
+              {/* Footer */}
+              <div className="px-5 py-2 border-t border-gray-800 flex-shrink-0 flex items-center justify-between">
+                <span className="text-[11px] font-mono text-gray-600">
+                  {suggestions.filter(s => !suggestionSearch || s.toLowerCase().includes(suggestionSearch.toLowerCase())).length} pregunta(s)
+                  {suggestionSearch && ` · filtrando "${suggestionSearch}"`}
+                </span>
+                <span className="text-[11px] font-mono text-gray-700">Esc para cerrar</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Favorite Modal */}

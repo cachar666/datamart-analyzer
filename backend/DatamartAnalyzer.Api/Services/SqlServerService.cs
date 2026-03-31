@@ -191,9 +191,13 @@ public class SqlServerService : ISqlServerService
         if (!sqlTrimmed.Contains("TOP ", StringComparison.OrdinalIgnoreCase)
             && !sqlTrimmed.Contains("FETCH NEXT", StringComparison.OrdinalIgnoreCase))
         {
-            sqlTrimmed = sqlTrimmed.Insert(
-                sqlTrimmed.IndexOf("SELECT", StringComparison.OrdinalIgnoreCase) + 6,
-                $" TOP {_maxRows}");
+            // Insertar TOP después de SELECT [DISTINCT], no entre SELECT y DISTINCT
+            var selectIdx = sqlTrimmed.IndexOf("SELECT", StringComparison.OrdinalIgnoreCase) + 6;
+            var afterSelect = sqlTrimmed[selectIdx..].TrimStart();
+            var insertAt = selectIdx + (sqlTrimmed[selectIdx..].Length - afterSelect.Length);
+            if (afterSelect.StartsWith("DISTINCT", StringComparison.OrdinalIgnoreCase))
+                insertAt += "DISTINCT".Length;
+            sqlTrimmed = sqlTrimmed.Insert(insertAt, $" TOP {_maxRows}");
         }
 
         var sw = System.Diagnostics.Stopwatch.StartNew();

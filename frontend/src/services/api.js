@@ -14,6 +14,7 @@ export const datamartApi = {
 
   analyze: (payload) => api.post('/analyze', payload).then(r => r.data),
   executeQuery: (database, sql) => api.post('/query', { database, sql }).then(r => r.data),
+  getFilterValues: (database, tipo) => api.get(`/filters/${encodeURIComponent(database)}/${tipo}`).then(r => r.data),
 }
 
 export default datamartApi

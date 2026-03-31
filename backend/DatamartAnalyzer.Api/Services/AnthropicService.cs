@@ -260,24 +260,52 @@ public class AnthropicService : IAnthropicService
     private static string TruncDesc(string desc)
         => desc.Length <= 40 ? desc : desc[..37] + "…";
 
-    // ── Mensaje de usuario: pregunta + secciones ERP relevantes ──────────────────
+    // ── Mensaje de usuario: filtros activos + secciones ERP relevantes + pregunta ─
 
     private string BuildMensajeUsuario(AnalyzeRequest request)
     {
-        if (!_documentService.HayDocumento)
+        var sb = new StringBuilder();
+
+        // Bloque 1: filtros de contexto activos (empresa, proyecto, macroproyecto seleccionados)
+        if (request.ContextoVariables is { Count: > 0 })
+        {
+            var activos = request.ContextoVariables
+                .Where(kv => kv.Value?.Count > 0)
+                .ToList();
+            if (activos.Count > 0)
+            {
+                sb.AppendLine("[FILTROS DE CONTEXTO ACTIVOS]");
+                sb.AppendLine("Aplica SIEMPRE estos filtros en el WHERE de tu SQL a menos que el usuario pida explícitamente otro valor:");
+                foreach (var kv in activos)
+                {
+                    var vals = string.Join(", ", kv.Value.Select(v => $"'{v}'"));
+                    if (request.FilterMeta != null && request.FilterMeta.TryGetValue(kv.Key, out var meta))
+                        sb.AppendLine($"- {kv.Key} → {meta.Tabla}.[{meta.Columna}] IN ({vals})");
+                    else
+                        sb.AppendLine($"- {kv.Key}: IN ({vals})");
+                }
+                sb.AppendLine();
+            }
+        }
+
+        // Bloque 2: secciones ERP relevantes (RAG)
+        if (_documentService.HayDocumento)
+        {
+            var secciones = _documentService.ObtenerSeccionesRelevantes(request.Pregunta, _maxCharsQuery);
+            if (!string.IsNullOrWhiteSpace(secciones))
+            {
+                sb.AppendLine("[CONTEXTO ERP RELEVANTE]");
+                sb.AppendLine(secciones);
+                sb.AppendLine();
+            }
+        }
+
+        if (sb.Length == 0)
             return request.Pregunta;
 
-        var secciones = _documentService.ObtenerSeccionesRelevantes(request.Pregunta, _maxCharsQuery);
-        if (string.IsNullOrWhiteSpace(secciones))
-            return request.Pregunta;
-
-        return $"""
-            [CONTEXTO ERP RELEVANTE]
-            {secciones}
-
-            [PREGUNTA]
-            {request.Pregunta}
-            """;
+        sb.AppendLine("[PREGUNTA]");
+        sb.Append(request.Pregunta);
+        return sb.ToString();
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────────────

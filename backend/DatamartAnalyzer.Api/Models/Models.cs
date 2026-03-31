@@ -24,13 +24,17 @@ public record SchemaContext(
 
 // ─── Analyze (AI-powered) ────────────────────────────────────────────────────
 
+public record FilterColInfo(string Tabla, string Columna);
+
 public record AnalyzeRequest(
     string Database,
     string Pregunta,
     List<SchemaColumn> Schema,
     List<ViewInfo> Vistas,
-    string? HistorialContexto,  // JSON de mensajes anteriores para contexto
-    string? Modelo              // Modelo de IA a usar (null = usa el default del servidor)
+    string? HistorialContexto,                              // JSON de mensajes anteriores para contexto
+    string? Modelo,                                         // Modelo de IA a usar (null = usa el default del servidor)
+    Dictionary<string, List<string>>? ContextoVariables = null,  // Filtros activos: { "empresa": ["NORTE"], "proyecto": [] }
+    Dictionary<string, FilterColInfo>? FilterMeta = null         // Metadata de tabla/columna por tipo de filtro
 );
 
 public enum TipoRespuesta
