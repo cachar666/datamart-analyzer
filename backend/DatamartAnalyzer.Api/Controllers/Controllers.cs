@@ -431,10 +431,19 @@ public class FiltersController : ControllerBase
 
             if (mapeoExplicito.TryGetValue(tipo, out var mapeo))
             {
-                var sqlExplicito = $"SELECT DISTINCT [{mapeo.Columna}] " +
-                                   $"FROM {mapeo.Tabla} " +
-                                   $"WHERE [{mapeo.Columna}] IS NOT NULL " +
-                                   $"ORDER BY [{mapeo.Columna}]";
+                // Para macroproyecto: también traer Empresa y Nombre Proyecto para enriquecer el tooltip
+                var incluirEmpresa = tipo.Equals("macroproyecto", StringComparison.OrdinalIgnoreCase);
+
+                var sqlExplicito = incluirEmpresa
+                    ? $"SELECT [{mapeo.Columna}], [Nombre Proyecto], [Empresa] " +
+                      $"FROM {mapeo.Tabla} " +
+                      $"WHERE [{mapeo.Columna}] IS NOT NULL AND [{mapeo.Columna}] <> '' " +
+                      $"ORDER BY [{mapeo.Columna}]"
+                    : $"SELECT DISTINCT [{mapeo.Columna}] " +
+                      $"FROM {mapeo.Tabla} " +
+                      $"WHERE [{mapeo.Columna}] IS NOT NULL " +
+                      $"ORDER BY [{mapeo.Columna}]";
+
                 var resExplicito = await _sql.EjecutarQueryAsync(database, sqlExplicito);
                 if (!resExplicito.Exitoso)
                     return StatusCode(500, new { error = resExplicito.Error });
@@ -442,9 +451,26 @@ public class FiltersController : ControllerBase
                 var valoresExplicitos = resExplicito.Datos?
                     .Select(row => row.TryGetValue(mapeo.Columna, out var v) ? v?.ToString() : null)
                     .Where(v => !string.IsNullOrWhiteSpace(v))
+                    .Distinct()
+                    .OrderBy(v => v)
                     .ToList() ?? new List<string>();
 
-                return Ok(new { tipo, valores = valoresExplicitos, tabla = mapeo.Tabla, columna = mapeo.Columna });
+                if (!incluirEmpresa)
+                    return Ok(new { tipo, valores = valoresExplicitos, tabla = mapeo.Tabla, columna = mapeo.Columna });
+
+                // Construir empresaPorValor: { "NombreMacro": ["Empresa A", "Empresa B"] }
+                var empresaPorValor = new Dictionary<string, List<string>>();
+                foreach (var row in resExplicito.Datos ?? [])
+                {
+                    var val = row.TryGetValue(mapeo.Columna, out var v) ? v?.ToString() : null;
+                    var emp = row.TryGetValue("Empresa", out var e) ? e?.ToString() : null;
+                    if (string.IsNullOrWhiteSpace(val)) continue;
+                    if (!empresaPorValor.ContainsKey(val)) empresaPorValor[val] = [];
+                    if (!string.IsNullOrWhiteSpace(emp) && !empresaPorValor[val].Contains(emp))
+                        empresaPorValor[val].Add(emp);
+                }
+
+                return Ok(new { tipo, valores = valoresExplicitos, tabla = mapeo.Tabla, columna = mapeo.Columna, empresaPorValor });
             }
 
             var columns = await _schema.ObtenerSchemaAsync(database);

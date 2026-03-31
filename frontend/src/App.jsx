@@ -843,6 +843,7 @@ const FILTER_CONFIG = [
 function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onApply, onClose }) {
   const [search, setSearch] = useState('')
   const [values, setValues] = useState([])
+  const [empresaPorValor, setEmpresaPorValor] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const searchRef = useRef(null)
@@ -853,6 +854,7 @@ function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onA
         const dbName = typeof database === 'object' ? database.nombre : database
         const res = await datamartApi.getFilterValues(dbName, tipo)
         setValues(res.valores || [])
+        if (res.empresaPorValor) setEmpresaPorValor(res.empresaPorValor)
         if (res.tabla && res.columna) onMeta?.({ tabla: res.tabla, columna: res.columna })
       } catch {
         setError('No se pudieron cargar los valores')
@@ -914,17 +916,26 @@ function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onA
         {!loading && !error && filtered.length === 0 && (
           <p className="text-xs text-gray-600 p-3 text-center">Sin resultados{search ? ` para "${search}"` : ''}</p>
         )}
-        {!loading && !error && filtered.map(v => (
-          <label key={v} className="flex items-center gap-2.5 px-3 py-2 hover:bg-ink-700 cursor-pointer transition-colors group">
-            <input
-              type="checkbox"
-              checked={selected.includes(v)}
-              onChange={() => toggle(v)}
-              className="w-3.5 h-3.5 rounded accent-blue-500 flex-shrink-0 cursor-pointer"
-            />
-            <span className="text-xs text-gray-300 truncate">{v}</span>
-          </label>
-        ))}
+        {!loading && !error && filtered.map(v => {
+          const empresas = empresaPorValor[v]
+          const tooltip = empresas?.length > 0 ? empresas.join(' · ') : null
+          return (
+            <label key={v} title={tooltip ?? undefined} className="flex items-center gap-2.5 px-3 py-2 hover:bg-ink-700 cursor-pointer transition-colors group">
+              <input
+                type="checkbox"
+                checked={selected.includes(v)}
+                onChange={() => toggle(v)}
+                className="w-3.5 h-3.5 rounded accent-blue-500 flex-shrink-0 cursor-pointer"
+              />
+              <div className="flex-1 min-w-0">
+                <span className="text-xs text-gray-300 truncate block">{v}</span>
+                {tooltip && (
+                  <span className="text-[10px] text-gray-600 truncate block leading-tight">{tooltip}</span>
+                )}
+              </div>
+            </label>
+          )
+        })}
       </div>
 
       {/* Footer */}
