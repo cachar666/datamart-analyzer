@@ -369,6 +369,20 @@ public class AnalyzeController : ControllerBase
         return sql + $"\nWHERE {clausula}";
     }
 
+    /// <summary>
+    /// Ejecuta un SQL con inyección de filtros — usado por los paneles del dashboard.
+    /// </summary>
+    [HttpPost("execute")]
+    public async Task<IActionResult> ExecuteWithFilters([FromBody] ExecuteWithFiltersRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Database) || string.IsNullOrWhiteSpace(request.Sql))
+            return BadRequest(new { error = "Se requieren database y sql." });
+
+        var sqlConFiltros = InjectarFiltrosPrebuilt(request.Sql, request.Filtros);
+        var result = await _sql.EjecutarQueryAsync(request.Database, sqlConFiltros);
+        return Ok(result);
+    }
+
     private static bool EsErrorDeColumna(string? error) =>
         error != null && (
             error.Contains("nombre de columna") ||

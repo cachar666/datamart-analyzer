@@ -5,7 +5,7 @@ import {
   RefreshCw, Eye, EyeOff, Code, Server, Layers, Lightbulb,
   Bookmark, BookMarked, Clock, Trash2, PlayCircle, Search,
   Star, LayoutDashboard, MessageSquare, GripVertical, X,
-  SlidersHorizontal
+  SlidersHorizontal, Filter
 } from 'lucide-react'
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
@@ -469,30 +469,56 @@ function FavoriteModal({ titulo, dashboards, onConfirm, onCancel }) {
 }
 
 // ─── Dashboard Panel ──────────────────────────────────────────────────────────
-function DashboardPanel({ fav, database, onRemove, onDragStart, onDragOver, onDrop, isDragOver }) {
+function DashboardPanel({ fav, database, appliedFilters, onToggleGlobal, onRemove, onDragStart, onDragOver, onDrop, isDragOver }) {
   const [datos, setDatos] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
+  const db = database?.nombre ?? database
+
   const ejecutar = useCallback(async () => {
-    if (!database) return
+    if (!db) return
     setLoading(true); setError(null)
     try {
-      const res = await datamartApi.executeQuery(database.nombre ?? database, fav.sql)
-      if (res.exitoso) setDatos(res.datos ?? [])
-      else setError(res.error ?? 'Error al ejecutar')
+      // Determinar fuente de filtros
+      const source = fav.aceptaFiltrosGlobales !== false ? (appliedFilters ?? {}) : (fav.filtrosFijos ?? {})
+      const filters = Object.fromEntries(Object.entries(source).filter(([, v]) => Array.isArray(v) && v.length > 0))
+      const hasFilters = Object.keys(filters).length > 0
+
+      if (fav.esPrebuilt && fav.prebuiltKey) {
+        // Prebuilt: re-ejecutar via /api/analyze con filtros limpios
+        const resp = await datamartApi.analyze({
+          database: db, pregunta: fav.prebuiltKey,
+          schema: [], vistas: [], historialContexto: null, modelo: null,
+          contextoVariables: hasFilters ? filters : null,
+        })
+        if (resp.tipoRespuesta === 'Error') setError(resp.mensajeError ?? 'Error al ejecutar')
+        else setDatos(resp.datos ?? [])
+      } else if (hasFilters) {
+        // AI query + filtros: inyectar en sqlBase
+        const resp = await datamartApi.executeWithFilters(db, fav.sqlBase ?? fav.sql, filters)
+        if (resp.exitoso) setDatos(resp.datos ?? [])
+        else setError(resp.error ?? 'Error al ejecutar')
+      } else {
+        // Sin filtros: ejecutar directo
+        const res = await datamartApi.executeQuery(db, fav.sql)
+        if (res.exitoso) setDatos(res.datos ?? [])
+        else setError(res.error ?? 'Error al ejecutar')
+      }
     } catch (e) {
       setError(e.message)
     } finally {
       setLoading(false)
     }
-  }, [database, fav.sql])
+  }, [db, fav, appliedFilters])
 
   useEffect(() => { ejecutar() }, [ejecutar])
 
   const tipoResp = fav.tipoRespuesta
   const showChart = (tipoResp === 'Grafico' || tipoResp === 'TablaMasGrafico') && fav.grafico
   const showTable = tipoResp === 'Tabla' || tipoResp === 'TablaMasGrafico' || tipoResp === 'TablaMasTexto'
+  const globalActive = fav.aceptaFiltrosGlobales !== false
+  const activeGlobalCount = globalActive ? Object.values(appliedFilters ?? {}).filter(v => Array.isArray(v) && v.length > 0).length : 0
 
   return (
     <div
@@ -509,6 +535,19 @@ function DashboardPanel({ fav, database, onRemove, onDragStart, onDragOver, onDr
         </div>
         <Star size={11} className="text-amber-400 fill-amber-400 flex-shrink-0" />
         <span className="text-xs font-semibold text-gray-200 flex-1 truncate">{fav.titulo}</span>
+        {/* Toggle filtros globales */}
+        <button
+          onClick={onToggleGlobal}
+          title={globalActive ? 'Usando filtros del dashboard — click para desactivar' : 'Activar filtros del dashboard'}
+          className={`relative p-1 rounded transition-colors ${globalActive ? 'text-amber-400' : 'text-gray-600 hover:text-gray-400'}`}
+        >
+          <Filter size={12} />
+          {activeGlobalCount > 0 && (
+            <span className="absolute -top-0.5 -right-0.5 min-w-[10px] h-[10px] bg-amber-500 rounded-full text-[7px] text-white font-bold flex items-center justify-center px-0.5">
+              {activeGlobalCount}
+            </span>
+          )}
+        </button>
         <button onClick={ejecutar} title="Reejecutar" className="p-1 rounded text-gray-600 hover:text-azure-400 transition-colors">
           <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
         </button>
@@ -547,6 +586,8 @@ function DashboardPanel({ fav, database, onRemove, onDragStart, onDragOver, onDr
 }
 
 // ─── Dashboard View ───────────────────────────────────────────────────────────
+const EMPTY_DASH_FILTERS = { empresa: [], proyecto: [], macroproyecto: [], estado: [] }
+
 function Dashboard({ dashboards, setDashboards, database, onGoConsulta }) {
   const [activeDashId, setActiveDashId] = useState(() => dashboards[0]?.id ?? null)
   const [refreshKey, setRefreshKey] = useState(0)
@@ -556,6 +597,10 @@ function Dashboard({ dashboards, setDashboards, database, onGoConsulta }) {
   const [renamingId, setRenamingId] = useState(null)
   const [renameVal, setRenameVal] = useState('')
   const dropRef = useRef(null)
+  // Filtros del dashboard: pending = lo que el usuario está seleccionando,
+  // applied = lo que se aplica a los paneles (solo cambia al dar Aplicar)
+  const [pendingFilters, setPendingFilters] = useState(EMPTY_DASH_FILTERS)
+  const [appliedFilters, setAppliedFilters] = useState(EMPTY_DASH_FILTERS)
 
   // Si se crea un nuevo dashboard desde afuera, seleccionarlo
   useEffect(() => {
@@ -613,6 +658,19 @@ function Dashboard({ dashboards, setDashboards, database, onGoConsulta }) {
   }
 
   const totalPaneles = dashboards.reduce((s, d) => s + d.paneles.length, 0)
+
+  const handleToggleGlobal = (panelId) => {
+    const next = dashboards.map(d => d.id === activeDash?.id
+      ? { ...d, paneles: d.paneles.map(p => p.id === panelId ? { ...p, aceptaFiltrosGlobales: p.aceptaFiltrosGlobales === false } : p) }
+      : d)
+    updateDashboards(next)
+  }
+
+  const handleDashFilterChange = (tipo, values) => setPendingFilters(prev => ({ ...prev, [tipo]: values }))
+  const handleDashFilterApply = () => setAppliedFilters({ ...pendingFilters })
+  const handleDashFilterClear = () => { setPendingFilters(EMPTY_DASH_FILTERS); setAppliedFilters(EMPTY_DASH_FILTERS) }
+
+  const activeFilterCount = Object.values(appliedFilters).filter(v => v.length > 0).length
 
   return (
     <div className="flex-1 overflow-y-auto p-6">
@@ -689,6 +747,31 @@ function Dashboard({ dashboards, setDashboards, database, onGoConsulta }) {
         </div>
       </div>
 
+      {/* Barra de filtros del dashboard */}
+      {database && (
+        <div className="mb-5 bg-ink-800/60 border border-gray-700/60 rounded-xl px-4 py-2.5 flex items-center gap-3 flex-wrap">
+          <div className="flex items-center gap-1.5 text-xs text-gray-500 font-medium flex-shrink-0">
+            <Filter size={12} className={activeFilterCount > 0 ? 'text-amber-400' : 'text-gray-600'} />
+            Filtros del dashboard
+            {activeFilterCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 bg-amber-500/20 text-amber-400 rounded-full text-[10px] font-bold border border-amber-500/30">
+                {activeFilterCount} activo{activeFilterCount !== 1 ? 's' : ''}
+              </span>
+            )}
+          </div>
+          <div className="flex-1">
+            <ContextVarsBar
+              database={database}
+              contextVars={pendingFilters}
+              onUpdate={handleDashFilterChange}
+              onMeta={() => {}}
+              onApply={handleDashFilterApply}
+              onClearAll={handleDashFilterClear}
+            />
+          </div>
+        </div>
+      )}
+
       {/* No database */}
       {!database && (
         <div className="flex flex-col items-center justify-center h-64 gap-4 text-center">
@@ -733,6 +816,8 @@ function Dashboard({ dashboards, setDashboards, database, onGoConsulta }) {
               key={`${fav.id}-${refreshKey}`}
               fav={fav}
               database={database}
+              appliedFilters={appliedFilters}
+              onToggleGlobal={() => handleToggleGlobal(fav.id)}
               onRemove={() => handleRemovePanel(fav.id)}
               onDragStart={() => setDragIdx(idx)}
               onDragOver={() => setDragOverIdx(idx)}
@@ -1315,8 +1400,16 @@ export default function App() {
     })
   }, [])
 
-  const handleAddFavorite = useCallback(({ panelTitulo, dashId, nuevoDashNombre, sql, tipoRespuesta, grafico }) => {
-    const panel = { id: newPanelId(), titulo: panelTitulo, sql, tipoRespuesta, grafico: grafico ?? null }
+  const handleAddFavorite = useCallback(({ panelTitulo, dashId, nuevoDashNombre, sql, tipoRespuesta, grafico, esPrebuilt, prebuiltKey, filtrosActivos }) => {
+    const panel = {
+      id: newPanelId(), titulo: panelTitulo,
+      sql, sqlBase: sql,
+      esPrebuilt: !!esPrebuilt,
+      prebuiltKey: prebuiltKey ?? null,
+      filtrosFijos: filtrosActivos ?? {},
+      aceptaFiltrosGlobales: true,
+      tipoRespuesta, grafico: grafico ?? null,
+    }
     setDashboards(prev => {
       let next
       if (dashId) {
@@ -1734,7 +1827,15 @@ export default function App() {
                 : null
               const isFavorite = !!sqlKey && dashboards.some(d => d.paneles.some(p => p.sql === sqlKey))
               const onFavorite = (sqlKey && !isFavorite)
-                ? () => setFavModal({ titulo: pregunta || 'Panel', sql: sqlKey, tipoRespuesta: msg.response?.tipoRespuesta, grafico: msg.response?.grafico })
+                ? () => setFavModal({
+                    titulo: pregunta || 'Panel',
+                    sql: sqlKey,
+                    tipoRespuesta: msg.response?.tipoRespuesta,
+                    grafico: msg.response?.grafico,
+                    esPrebuilt: !!msg.response?.esPrebuilt,
+                    prebuiltKey: msg.response?.esPrebuilt ? pregunta : null,
+                    filtrosActivos: { ...contextVarsRef.current },
+                  })
                 : isFavorite ? () => {} : null
               return (
                 <MessageBubble
@@ -2094,7 +2195,11 @@ export default function App() {
           titulo={favModal.titulo}
           dashboards={dashboards}
           onConfirm={({ panelTitulo, dashId, nuevoDashNombre }) =>
-            handleAddFavorite({ panelTitulo, dashId, nuevoDashNombre, sql: favModal.sql, tipoRespuesta: favModal.tipoRespuesta, grafico: favModal.grafico })
+            handleAddFavorite({
+              panelTitulo, dashId, nuevoDashNombre,
+              sql: favModal.sql, tipoRespuesta: favModal.tipoRespuesta, grafico: favModal.grafico,
+              esPrebuilt: favModal.esPrebuilt, prebuiltKey: favModal.prebuiltKey, filtrosActivos: favModal.filtrosActivos,
+            })
           }
           onCancel={() => setFavModal(null)}
         />

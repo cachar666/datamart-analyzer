@@ -95,6 +95,12 @@ public record QueryRequest(
     string Sql
 );
 
+public record ExecuteWithFiltersRequest(
+    string Database,
+    string Sql,
+    Dictionary<string, List<string>>? Filtros = null
+);
+
 public record QueryResponse(
     bool Exitoso,
     List<Dictionary<string, object?>>? Datos,
