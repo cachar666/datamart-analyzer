@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   Database, Send, Loader2, ChevronDown, BarChart2,
   Table, FileText, AlertCircle, CheckCircle2, Zap,
@@ -666,7 +666,12 @@ function Dashboard({ dashboards, setDashboards, database, onGoConsulta }) {
     updateDashboards(next)
   }
 
-  const handleDashFilterChange = (tipo, values) => setPendingFilters(prev => ({ ...prev, [tipo]: values }))
+  const handleDashFilterChange = (tipo, values) => setPendingFilters(prev => {
+    const next = { ...prev, [tipo]: values }
+    const children = FILTER_CHILDREN[tipo] || []
+    children.forEach(child => { next[child] = [] })
+    return next
+  })
   const handleDashFilterApply = () => setAppliedFilters({ ...pendingFilters })
   const handleDashFilterClear = () => { setPendingFilters(EMPTY_DASH_FILTERS); setAppliedFilters(EMPTY_DASH_FILTERS) }
 
@@ -833,14 +838,20 @@ function Dashboard({ dashboards, setDashboards, database, onGoConsulta }) {
 
 // ─── Filter Config ────────────────────────────────────────────────────────────
 const FILTER_CONFIG = [
-  { tipo: 'empresa',       label: 'Empresa',   dotBg: 'bg-azure-400',   chipBg: 'bg-azure-900/30',   chipBorder: 'border-azure-500/40',   chipText: 'text-azure-200'   },
-  { tipo: 'proyecto',      label: 'Proyecto',  dotBg: 'bg-emerald-400', chipBg: 'bg-emerald-900/30', chipBorder: 'border-emerald-500/40', chipText: 'text-emerald-200' },
-  { tipo: 'macroproyecto', label: 'Macropro',  dotBg: 'bg-purple-400',  chipBg: 'bg-purple-900/30',  chipBorder: 'border-purple-500/40',  chipText: 'text-purple-200'  },
-  { tipo: 'estado',        label: 'Estado',    dotBg: 'bg-amber-400',   chipBg: 'bg-amber-900/30',   chipBorder: 'border-amber-500/40',   chipText: 'text-amber-200'   },
+  { tipo: 'empresa',       label: 'Empresa',       dotBg: 'bg-azure-400',   chipBg: 'bg-azure-900/30',   chipBorder: 'border-azure-500/40',   chipText: 'text-azure-200'   },
+  { tipo: 'macroproyecto', label: 'Macropro',       dotBg: 'bg-purple-400',  chipBg: 'bg-purple-900/30',  chipBorder: 'border-purple-500/40',  chipText: 'text-purple-200'  },
+  { tipo: 'proyecto',      label: 'Proyecto',       dotBg: 'bg-emerald-400', chipBg: 'bg-emerald-900/30', chipBorder: 'border-emerald-500/40', chipText: 'text-emerald-200' },
+  { tipo: 'estado',        label: 'Estado',         dotBg: 'bg-amber-400',   chipBg: 'bg-amber-900/30',   chipBorder: 'border-amber-500/40',   chipText: 'text-amber-200'   },
 ]
 
+// Hijos jerárquicos: al cambiar un padre se limpian sus hijos
+const FILTER_CHILDREN = {
+  empresa:       ['macroproyecto', 'proyecto'],
+  macroproyecto: ['proyecto'],
+}
+
 // ─── Filter Dropdown ──────────────────────────────────────────────────────────
-function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onApply, onClose }) {
+function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onApply, onClose, parentContext }) {
   const [search, setSearch] = useState('')
   const [values, setValues] = useState([])
   const [empresaPorValor, setEmpresaPorValor] = useState({})
@@ -868,7 +879,32 @@ function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onA
     setTimeout(() => searchRef.current?.focus(), 50)
   }, [database, tipo])
 
-  const filtered = values.filter(v => v.toLowerCase().includes(search.toLowerCase()))
+  // Filtrado jerárquico: reduce opciones según selección de padres
+  const hierarchyValues = useMemo(() => {
+    if (tipo === 'macroproyecto') {
+      const empresasSel = parentContext?.empresa || []
+      if (empresasSel.length === 0) return values
+      return values.filter(v => {
+        const emps = empresaPorValor[v] || []
+        return emps.some(e => empresasSel.includes(e))
+      })
+    }
+    if (tipo === 'proyecto') {
+      const empresasSel = parentContext?.empresa || []
+      const macrosSel   = parentContext?.macroproyecto || []
+      if (empresasSel.length === 0 && macrosSel.length === 0) return values
+      return values.filter(v => {
+        const meta = metadataPorValor[v]
+        if (!meta) return true
+        const okEmpresa = empresasSel.length === 0 || empresasSel.includes(meta.empresa)
+        const okMacro   = macrosSel.length   === 0 || macrosSel.includes(meta.macroproyecto)
+        return okEmpresa && okMacro
+      })
+    }
+    return values
+  }, [tipo, values, parentContext, empresaPorValor, metadataPorValor])
+
+  const filtered = hierarchyValues.filter(v => v.toLowerCase().includes(search.toLowerCase()))
   const allSelected = filtered.length > 0 && filtered.every(v => selected.includes(v))
 
   const toggle = (v) => onChange(selected.includes(v) ? selected.filter(s => s !== v) : [...selected, v])
@@ -1030,6 +1066,7 @@ function ContextVarsBar({ database, contextVars, onUpdate, onMeta, onApply, onCl
                 onMeta={(meta) => onMeta(tipo, meta)}
                 onApply={onApply}
                 onClose={() => setOpenDropdown(null)}
+                parentContext={contextVars}
               />
             )}
           </div>
@@ -1448,7 +1485,13 @@ export default function App() {
   }, [])
 
   const handleFilterChange = useCallback((tipo, values) => {
-    setContextVars(prev => ({ ...prev, [tipo]: values }))
+    setContextVars(prev => {
+      const next = { ...prev, [tipo]: values }
+      // Limpiar hijos jerárquicos cuando cambia el padre
+      const children = FILTER_CHILDREN[tipo] || []
+      children.forEach(child => { next[child] = [] })
+      return next
+    })
   }, [])
 
   const handleFilterMeta = useCallback((tipo, meta) => {
