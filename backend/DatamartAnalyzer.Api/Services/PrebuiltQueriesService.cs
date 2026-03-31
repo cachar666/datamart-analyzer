@@ -698,6 +698,24 @@ public class PrebuiltQueriesService : IPrebuiltQueriesService
             ),
 
             new(
+                Pregunta: "Listar los macroproyectos del sistema incluyendo la empresa y sus respectivos codigos",
+                Sql: """
+                    SELECT
+                      p.[MacroProyecto],
+                      p.[Empresa],
+                      COUNT(DISTINCT p.[Codigo Proyecto]) AS TotalProyectos,
+                      STRING_AGG(p.[Codigo Proyecto], ', ') WITHIN GROUP (ORDER BY p.[Codigo Proyecto]) AS CodigosProyectos
+                    FROM [ADP_DTM_DIM].[Proyecto] p
+                    WHERE p.[MacroProyecto] IS NOT NULL AND p.[MacroProyecto] <> ''
+                    GROUP BY p.[MacroProyecto], p.[Empresa]
+                    ORDER BY p.[Empresa], p.[MacroProyecto]
+                    """,
+                TipoRespuesta: TipoRespuesta.Tabla,
+                ExplicacionTexto: "Listado de macroproyectos con su empresa, cantidad de proyectos asociados y los códigos de cada uno.",
+                Grafico: null
+            ),
+
+            new(
                 Pregunta: "Listar proyectos con su respectivo estado",
                 Sql: """
                     SELECT

@@ -1510,6 +1510,7 @@ export default function App() {
 
   const suggestionsAdpro = [
     'Listar proyectos con su respectivo estado',
+    'Listar los macroproyectos del sistema incluyendo la empresa y sus respectivos codigos',
     '¿Cuál es el costo ejecutado vs presupuestado por proyecto de construcción?',
     '¿Cuáles son los capítulos o ítems de obra con mayor desviación entre presupuesto y ejecución?',
     '¿Qué materiales e insumos tienen mayor consumo en los proyectos activos?',
