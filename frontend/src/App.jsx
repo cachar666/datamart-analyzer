@@ -1473,13 +1473,17 @@ export default function App() {
             <div className="flex items-center gap-1 bg-black/20 rounded-lg p-0.5 border border-white/10">
               <button
                 onClick={() => { setVistaActiva('consulta'); setShowSuggestions(false) }}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${vistaActiva === 'consulta' && !showSuggestions ? 'bg-amber-600/20 text-amber-400 border border-amber-500/30' : 'text-white/50 hover:text-white/80'}`}
+                disabled={!selectedDb}
+                title={!selectedDb ? 'Selecciona una base de datos primero' : ''}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${!selectedDb ? 'opacity-35 cursor-not-allowed text-white/30' : vistaActiva === 'consulta' && !showSuggestions ? 'bg-amber-600/20 text-amber-400 border border-amber-500/30' : 'text-white/50 hover:text-white/80'}`}
               >
                 <MessageSquare size={11} /> Consulta
               </button>
               <button
                 onClick={() => { setVistaActiva('dashboard'); setShowSuggestions(false) }}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all relative ${vistaActiva === 'dashboard' ? 'bg-amber-600/20 text-amber-400 border border-amber-500/30' : 'text-white/50 hover:text-white/80'}`}
+                disabled={!selectedDb}
+                title={!selectedDb ? 'Selecciona una base de datos primero' : ''}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all relative ${!selectedDb ? 'opacity-35 cursor-not-allowed text-white/30' : vistaActiva === 'dashboard' ? 'bg-amber-600/20 text-amber-400 border border-amber-500/30' : 'text-white/50 hover:text-white/80'}`}
               >
                 <LayoutDashboard size={11} /> Dashboard
                 {dashboards.length > 0 && (
@@ -1490,8 +1494,9 @@ export default function App() {
               </button>
               <button
                 onClick={() => { setVistaActiva('consulta'); setShowSuggestions(v => !v); setSuggestionSearch('') }}
-                title="Preguntas sugeridas"
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${showSuggestions ? 'bg-amber-600/20 text-amber-300 border border-amber-500/30' : 'text-white/50 hover:text-white/80'}`}
+                disabled={!selectedDb}
+                title={!selectedDb ? 'Selecciona una base de datos primero' : 'Preguntas sugeridas'}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${!selectedDb ? 'opacity-35 cursor-not-allowed text-white/30' : showSuggestions ? 'bg-amber-600/20 text-amber-300 border border-amber-500/30' : 'text-white/50 hover:text-white/80'}`}
               >
                 <Lightbulb size={11} /> Sugeridas
               </button>
