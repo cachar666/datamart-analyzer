@@ -437,19 +437,19 @@ public class FiltersController : ControllerBase
                 // Macroproyecto: traer Empresa para subtext/tooltip
                 if (esMacro)
                 {
-                    var sql = $"SELECT [{mapeo.Columna}], [Empresa] " +
-                              $"FROM {mapeo.Tabla} " +
-                              $"WHERE [{mapeo.Columna}] IS NOT NULL AND [{mapeo.Columna}] <> '' " +
-                              $"ORDER BY [{mapeo.Columna}]";
-                    var res = await _sql.EjecutarQueryAsync(database, sql);
-                    if (!res.Exitoso) return StatusCode(500, new { error = res.Error });
+                    var sqlMacro = $"SELECT [{mapeo.Columna}], [Empresa] " +
+                                   $"FROM {mapeo.Tabla} " +
+                                   $"WHERE [{mapeo.Columna}] IS NOT NULL AND [{mapeo.Columna}] <> '' " +
+                                   $"ORDER BY [{mapeo.Columna}]";
+                    var resMacro = await _sql.EjecutarQueryAsync(database, sqlMacro);
+                    if (!resMacro.Exitoso) return StatusCode(500, new { error = resMacro.Error });
 
-                    var valores = res.Datos!
+                    var valoresMacro = resMacro.Datos!
                         .Select(r => r.TryGetValue(mapeo.Columna, out var v) ? v?.ToString() : null)
                         .Where(v => !string.IsNullOrWhiteSpace(v)).Distinct().OrderBy(v => v).ToList();
 
                     var empresaPorValor = new Dictionary<string, List<string>>();
-                    foreach (var row in res.Datos!)
+                    foreach (var row in resMacro.Datos!)
                     {
                         var val = row.TryGetValue(mapeo.Columna, out var v) ? v?.ToString() : null;
                         var emp = row.TryGetValue("Empresa", out var e) ? e?.ToString() : null;
@@ -458,36 +458,36 @@ public class FiltersController : ControllerBase
                         if (!string.IsNullOrWhiteSpace(emp) && !empresaPorValor[val].Contains(emp))
                             empresaPorValor[val].Add(emp);
                     }
-                    return Ok(new { tipo, valores, tabla = mapeo.Tabla, columna = mapeo.Columna, empresaPorValor });
+                    return Ok(new { tipo, valores = valoresMacro, tabla = mapeo.Tabla, columna = mapeo.Columna, empresaPorValor });
                 }
 
                 // Proyecto: traer Codigo, Empresa, MacroProyecto para subtext/tooltip
                 if (esProyecto)
                 {
-                    var sql = $"SELECT [{mapeo.Columna}], MIN([Codigo Proyecto]) AS Codigo, " +
-                              $"MIN([Empresa]) AS Empresa, MIN([MacroProyecto]) AS MacroProyecto " +
-                              $"FROM {mapeo.Tabla} " +
-                              $"WHERE [{mapeo.Columna}] IS NOT NULL AND [{mapeo.Columna}] <> '' " +
-                              $"GROUP BY [{mapeo.Columna}] " +
-                              $"ORDER BY [{mapeo.Columna}]";
-                    var res = await _sql.EjecutarQueryAsync(database, sql);
-                    if (!res.Exitoso) return StatusCode(500, new { error = res.Error });
+                    var sqlProy = $"SELECT [{mapeo.Columna}], MIN([Codigo Proyecto]) AS Codigo, " +
+                                  $"MIN([Empresa]) AS Empresa, MIN([MacroProyecto]) AS MacroProyecto " +
+                                  $"FROM {mapeo.Tabla} " +
+                                  $"WHERE [{mapeo.Columna}] IS NOT NULL AND [{mapeo.Columna}] <> '' " +
+                                  $"GROUP BY [{mapeo.Columna}] " +
+                                  $"ORDER BY [{mapeo.Columna}]";
+                    var resProy = await _sql.EjecutarQueryAsync(database, sqlProy);
+                    if (!resProy.Exitoso) return StatusCode(500, new { error = resProy.Error });
 
-                    var valores = res.Datos!
+                    var valoresProy = resProy.Datos!
                         .Select(r => r.TryGetValue(mapeo.Columna, out var v) ? v?.ToString() : null)
                         .Where(v => !string.IsNullOrWhiteSpace(v)).ToList();
 
                     var metadataPorValor = new Dictionary<string, object>();
-                    foreach (var row in res.Datos!)
+                    foreach (var row in resProy.Datos!)
                     {
-                        var val    = row.TryGetValue(mapeo.Columna,  out var v)  ? v?.ToString()  : null;
-                        var codigo = row.TryGetValue("Codigo",        out var c)  ? c?.ToString()  : null;
-                        var emp    = row.TryGetValue("Empresa",        out var e)  ? e?.ToString()  : null;
-                        var macro  = row.TryGetValue("MacroProyecto", out var m)  ? m?.ToString()  : null;
+                        var val    = row.TryGetValue(mapeo.Columna,   out var v) ? v?.ToString() : null;
+                        var codigo = row.TryGetValue("Codigo",         out var c) ? c?.ToString() : null;
+                        var emp    = row.TryGetValue("Empresa",         out var e) ? e?.ToString() : null;
+                        var macro  = row.TryGetValue("MacroProyecto",  out var m) ? m?.ToString() : null;
                         if (string.IsNullOrWhiteSpace(val)) continue;
                         metadataPorValor[val] = new { codigo, empresa = emp, macroproyecto = macro };
                     }
-                    return Ok(new { tipo, valores, tabla = mapeo.Tabla, columna = mapeo.Columna, metadataPorValor });
+                    return Ok(new { tipo, valores = valoresProy, tabla = mapeo.Tabla, columna = mapeo.Columna, metadataPorValor });
                 }
 
                 // Otros tipos: simple DISTINCT
