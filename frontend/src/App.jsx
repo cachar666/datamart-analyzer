@@ -851,13 +851,15 @@ const FILTER_CHILDREN = {
 }
 
 // ─── Filter Dropdown ──────────────────────────────────────────────────────────
-function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onApply, onClose, parentContext }) {
+function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onLabels, onApply, onClose, parentContext }) {
   const [search, setSearch] = useState('')
   const [values, setValues] = useState([])
   const [empresaPorValor, setEmpresaPorValor] = useState({})
   const [metadataPorValor, setMetadataPorValor] = useState({})
+  const [descripcionPorValor, setDescripcionPorValor] = useState({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [tooltipInfo, setTooltipInfo] = useState(null) // { meta, x, y }
   const searchRef = useRef(null)
 
   useEffect(() => {
@@ -866,8 +868,9 @@ function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onA
         const dbName = typeof database === 'object' ? database.nombre : database
         const res = await datamartApi.getFilterValues(dbName, tipo)
         setValues(res.valores || [])
-        if (res.empresaPorValor) setEmpresaPorValor(res.empresaPorValor)
-        if (res.metadataPorValor) setMetadataPorValor(res.metadataPorValor)
+        if (res.empresaPorValor)     setEmpresaPorValor(res.empresaPorValor)
+        if (res.metadataPorValor)    setMetadataPorValor(res.metadataPorValor)
+        if (res.descripcionPorValor) { setDescripcionPorValor(res.descripcionPorValor); onLabels?.(res.descripcionPorValor) }
         if (res.tabla && res.columna) onMeta?.({ tabla: res.tabla, columna: res.columna })
       } catch {
         setError('No se pudieron cargar los valores')
@@ -955,18 +958,32 @@ function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onA
           <p className="text-xs text-gray-600 p-3 text-center">Sin resultados{search ? ` para "${search}"` : ''}</p>
         )}
         {!loading && !error && filtered.map(v => {
-          // Macroproyecto: subtext = empresas, tooltip = empresas
           const empresas = empresaPorValor[v]
-          // Proyecto: subtext = codigo, tooltip = empresa · macroproyecto
-          const meta = metadataPorValor[v]
+          const meta     = metadataPorValor[v]
+          const desc     = descripcionPorValor[v]
+
+          // Label principal: descripción (macropro) o nombre (proyecto/empresa/estado)
+          const displayLabel = desc ?? v
+          // Subtext bajo el label
           const subtext = empresas?.length > 0
+            ? v  // macroproyecto: subtext = código
+            : meta?.codigo ?? null  // proyecto: subtext = código
+          // Tooltip nativo solo para macroproyecto sin custom tooltip
+          const nativeTooltip = empresas?.length > 0 && !meta
             ? empresas.join(' · ')
-            : meta?.codigo ?? null
-          const tooltip = meta
-            ? [meta.empresa, meta.macroproyecto].filter(Boolean).join(' · ') || null
-            : (empresas?.length > 0 ? empresas.join(' · ') : null)
+            : undefined
+          const hasCustomTooltip = !!meta && !!(meta.empresa || meta.macroproyecto)
           return (
-            <label key={v} title={tooltip ?? undefined} className="flex items-center gap-2.5 px-3 py-2 hover:bg-ink-700 cursor-pointer transition-colors group">
+            <label
+              key={v}
+              title={nativeTooltip}
+              className="flex items-center gap-2.5 px-3 py-2 hover:bg-ink-700 cursor-pointer transition-colors"
+              onMouseEnter={hasCustomTooltip ? (e) => {
+                const r = e.currentTarget.getBoundingClientRect()
+                setTooltipInfo({ meta, x: r.right + 8, y: r.top + r.height / 2 })
+              } : undefined}
+              onMouseLeave={hasCustomTooltip ? () => setTooltipInfo(null) : undefined}
+            >
               <input
                 type="checkbox"
                 checked={selected.includes(v)}
@@ -974,8 +991,8 @@ function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onA
                 className="w-3.5 h-3.5 rounded accent-blue-500 flex-shrink-0 cursor-pointer"
               />
               <div className="flex-1 min-w-0">
-                <span className="text-xs text-gray-300 truncate block">{v}</span>
-                {subtext && (
+                <span className="text-xs text-gray-300 truncate block">{displayLabel}</span>
+                {subtext && subtext !== displayLabel && (
                   <span className="text-[10px] text-gray-600 truncate block leading-tight">{subtext}</span>
                 )}
               </div>
@@ -994,6 +1011,32 @@ function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onA
           Aplicar
         </button>
       </div>
+
+      {/* Tooltip custom fixed para proyecto (escapa overflow-hidden) */}
+      {tooltipInfo && (
+        <div
+          className="pointer-events-none fixed z-[200] -translate-y-1/2"
+          style={{ left: tooltipInfo.x, top: tooltipInfo.y }}
+        >
+          <div className="bg-ink-900 border border-gray-600 rounded-lg shadow-2xl px-3 py-2 w-52">
+            {tooltipInfo.meta.empresa && (
+              <div className="flex items-center gap-2 mb-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-azure-400 flex-shrink-0" />
+                <span className="text-[10px] text-gray-500 w-12 flex-shrink-0">Empresa</span>
+                <span className="text-[10px] text-azure-300 font-medium truncate">{tooltipInfo.meta.empresa}</span>
+              </div>
+            )}
+            {tooltipInfo.meta.macroproyecto && (
+              <div className="flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-purple-400 flex-shrink-0" />
+                <span className="text-[10px] text-gray-500 w-12 flex-shrink-0">Macro</span>
+                <span className="text-[10px] text-purple-300 font-medium truncate">{tooltipInfo.meta.macroproyecto}</span>
+              </div>
+            )}
+          </div>
+          <div className="absolute right-full top-1/2 -translate-y-1/2 border-[5px] border-transparent border-r-gray-600" />
+        </div>
+      )}
     </div>
   )
 }
@@ -1001,7 +1044,12 @@ function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onA
 // ─── Context Vars Bar ─────────────────────────────────────────────────────────
 function ContextVarsBar({ database, contextVars, onUpdate, onMeta, onApply, onClearAll }) {
   const [openDropdown, setOpenDropdown] = useState(null)
+  const [labelMap, setLabelMap] = useState({}) // { macroproyecto: { code: desc } }
   const wrapperRefs = useRef({})
+
+  const handleLabels = (tipo, descMap) => {
+    setLabelMap(prev => ({ ...prev, [tipo]: descMap }))
+  }
 
   // Cierra el dropdown si se hace click fuera
   useEffect(() => {
@@ -1037,7 +1085,7 @@ function ContextVarsBar({ database, contextVars, onUpdate, onMeta, onApply, onCl
                   onClick={() => setOpenDropdown(isOpen ? null : tipo)}
                   className={`flex items-center gap-1 ${chipText} hover:opacity-80 transition-opacity`}
                 >
-                  <span className="text-[11px] max-w-[90px] truncate">{selected[0]}</span>
+                  <span className="text-[11px] max-w-[90px] truncate">{labelMap[tipo]?.[selected[0]] ?? selected[0]}</span>
                   {selected.length > 1 && (
                     <span className="text-[9px] bg-white/20 text-white rounded-full px-1 font-bold">+{selected.length - 1}</span>
                   )}
@@ -1064,6 +1112,7 @@ function ContextVarsBar({ database, contextVars, onUpdate, onMeta, onApply, onCl
                 selected={selected}
                 onChange={(vals) => onUpdate(tipo, vals)}
                 onMeta={(meta) => onMeta(tipo, meta)}
+                onLabels={(descMap) => handleLabels(tipo, descMap)}
                 onApply={onApply}
                 onClose={() => setOpenDropdown(null)}
                 parentContext={contextVars}

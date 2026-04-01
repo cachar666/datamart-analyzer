@@ -434,31 +434,35 @@ public class FiltersController : ControllerBase
                 var esMacro     = tipo.Equals("macroproyecto", StringComparison.OrdinalIgnoreCase);
                 var esProyecto  = tipo.Equals("proyecto",      StringComparison.OrdinalIgnoreCase);
 
-                // Macroproyecto: traer Empresa para subtext/tooltip
+                // Macroproyecto: traer Descripcion y Empresa para display y tooltip
                 if (esMacro)
                 {
-                    var sqlMacro = $"SELECT [{mapeo.Columna}], [Empresa] " +
+                    var sqlMacro = $"SELECT [{mapeo.Columna}], [MacroProyecto Descripcion], [Empresa] " +
                                    $"FROM {mapeo.Tabla} " +
                                    $"WHERE [{mapeo.Columna}] IS NOT NULL AND [{mapeo.Columna}] <> '' " +
-                                   $"ORDER BY [{mapeo.Columna}]";
+                                   $"ORDER BY [MacroProyecto Descripcion]";
                     var resMacro = await _sql.EjecutarQueryAsync(database, sqlMacro);
                     if (!resMacro.Exitoso) return StatusCode(500, new { error = resMacro.Error });
 
+                    // valores = lista de códigos únicos (para SQL injection)
                     var valoresMacro = resMacro.Datos!
                         .Select(r => r.TryGetValue(mapeo.Columna, out var v) ? v?.ToString() : null)
-                        .Where(v => !string.IsNullOrWhiteSpace(v)).Distinct().OrderBy(v => v).ToList();
+                        .Where(v => !string.IsNullOrWhiteSpace(v)).Distinct().ToList();
 
-                    var empresaPorValor = new Dictionary<string, List<string>>();
+                    var empresaPorValor    = new Dictionary<string, List<string>>();
+                    var descripcionPorValor = new Dictionary<string, string>();
                     foreach (var row in resMacro.Datos!)
                     {
-                        var val = row.TryGetValue(mapeo.Columna, out var v) ? v?.ToString() : null;
-                        var emp = row.TryGetValue("Empresa", out var e) ? e?.ToString() : null;
+                        var val  = row.TryGetValue(mapeo.Columna,                out var v) ? v?.ToString() : null;
+                        var desc = row.TryGetValue("MacroProyecto Descripcion",  out var d) ? d?.ToString() : null;
+                        var emp  = row.TryGetValue("Empresa",                    out var e) ? e?.ToString() : null;
                         if (string.IsNullOrWhiteSpace(val)) continue;
+                        if (!string.IsNullOrWhiteSpace(desc)) descripcionPorValor.TryAdd(val, desc);
                         if (!empresaPorValor.ContainsKey(val)) empresaPorValor[val] = [];
                         if (!string.IsNullOrWhiteSpace(emp) && !empresaPorValor[val].Contains(emp))
                             empresaPorValor[val].Add(emp);
                     }
-                    return Ok(new { tipo, valores = valoresMacro, tabla = mapeo.Tabla, columna = mapeo.Columna, empresaPorValor });
+                    return Ok(new { tipo, valores = valoresMacro, tabla = mapeo.Tabla, columna = mapeo.Columna, empresaPorValor, descripcionPorValor });
                 }
 
                 // Proyecto: traer Codigo, Empresa, MacroProyecto para subtext/tooltip
