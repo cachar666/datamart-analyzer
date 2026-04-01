@@ -465,11 +465,12 @@ public class FiltersController : ControllerBase
                     return Ok(new { tipo, valores = valoresMacro, tabla = mapeo.Tabla, columna = mapeo.Columna, empresaPorValor, descripcionPorValor });
                 }
 
-                // Proyecto: traer Codigo, Empresa, MacroProyecto para subtext/tooltip
+                // Proyecto: traer Codigo, Empresa, MacroProyecto y su Descripcion para subtext/tooltip
                 if (esProyecto)
                 {
                     var sqlProy = $"SELECT [{mapeo.Columna}], MIN([Codigo Proyecto]) AS Codigo, " +
-                                  $"MIN([Empresa]) AS Empresa, MIN([MacroProyecto]) AS MacroProyecto " +
+                                  $"MIN([Empresa]) AS Empresa, MIN([MacroProyecto]) AS MacroProyecto, " +
+                                  $"MIN([MacroProyecto Descripcion]) AS MacroProyectoDesc " +
                                   $"FROM {mapeo.Tabla} " +
                                   $"WHERE [{mapeo.Columna}] IS NOT NULL AND [{mapeo.Columna}] <> '' " +
                                   $"GROUP BY [{mapeo.Columna}] " +
@@ -484,12 +485,15 @@ public class FiltersController : ControllerBase
                     var metadataPorValor = new Dictionary<string, object>();
                     foreach (var row in resProy.Datos!)
                     {
-                        var val    = row.TryGetValue(mapeo.Columna,   out var v) ? v?.ToString() : null;
-                        var codigo = row.TryGetValue("Codigo",         out var c) ? c?.ToString() : null;
-                        var emp    = row.TryGetValue("Empresa",         out var e) ? e?.ToString() : null;
-                        var macro  = row.TryGetValue("MacroProyecto",  out var m) ? m?.ToString() : null;
+                        var val       = row.TryGetValue(mapeo.Columna,            out var v) ? v?.ToString() : null;
+                        var codigo    = row.TryGetValue("Codigo",                  out var c) ? c?.ToString() : null;
+                        var emp       = row.TryGetValue("Empresa",                 out var e) ? e?.ToString() : null;
+                        var macroCod  = row.TryGetValue("MacroProyecto",           out var m) ? m?.ToString() : null;
+                        var macroDesc = row.TryGetValue("MacroProyectoDesc",       out var d) ? d?.ToString() : null;
                         if (string.IsNullOrWhiteSpace(val)) continue;
-                        metadataPorValor[val] = new { codigo, empresa = emp, macroproyecto = macro };
+                        // Mostrar descripción del macroproyecto si existe, si no el código
+                        var macroLabel = !string.IsNullOrWhiteSpace(macroDesc) ? macroDesc : macroCod;
+                        metadataPorValor[val] = new { codigo, empresa = emp, macroproyecto = macroLabel };
                     }
                     return Ok(new { tipo, valores = valoresProy, tabla = mapeo.Tabla, columna = mapeo.Columna, metadataPorValor });
                 }
