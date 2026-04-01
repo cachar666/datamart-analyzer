@@ -25,7 +25,7 @@ datamart-analyzer/
 │   │   └── DocumentService.cs          — contexto RAG del ERP
 │   └── Models/Models.cs                — records y enums compartidos
 └── frontend/src/
-    ├── App.jsx                         — componente principal (~2100 líneas)
+    ├── App.jsx                         — componente principal (~2200 líneas)
     └── services/api.js                 — cliente HTTP (axios)
 ```
 
@@ -39,6 +39,7 @@ datamart-analyzer/
 | GET | `/api/schema/{database}` | Metadatos de hechos y dimensiones |
 | POST | `/api/analyze` | Procesa pregunta → SQL → resultado |
 | POST | `/api/query` | Ejecuta SQL directo (modo avanzado) |
+| POST | `/api/analyze/execute` | Ejecuta SQL prebuilt con filtros inyectados |
 | GET | `/api/views/{database}` | Vistas disponibles en el datamart |
 | GET | `/api/filters/{database}/{tipo}` | Valores distintos para filtros de contexto |
 
@@ -82,6 +83,7 @@ Consultas con match exacto por texto normalizado → cero costo de IA.
 | ¿Cuál es el costo por metro cuadrado construido en cada proyecto activo? | Tabla |
 | ¿Cuál es el valor del inventario de mis proyectos en ejecución? | TablaMasGrafico |
 | Listar proyectos con su respectivo estado | Tabla |
+| Listar los macroproyectos del sistema incluyendo la empresa y sus respectivos codigos | Tabla |
 | + queries SRM (licitaciones, adjudicaciones, proveedores) | Tabla / TablaMasGrafico |
 
 ### Inyección de filtros en prebuilt
@@ -98,18 +100,48 @@ Los prebuilt hacen JOIN a `[ADP_DTM_DIM].[Proyecto]` con alias `p`. Al aplicar f
 
 ## Filtros de Contexto
 
-Filtros persistentes en el header (visibles en vista Consulta con BD seleccionada).
+Filtros persistentes en el header (visibles en vista Consulta y Dashboard con BD seleccionada). Orden jerárquico:
 
-| Filtro | Tabla origen | Columna |
-|--------|-------------|---------|
-| Empresa | `[ADP_DTM_DIM].[Proyecto]` | `Empresa` |
-| Proyecto | `[ADP_DTM_DIM].[Proyecto]` | `Nombre Proyecto` |
-| Macropro | `[ADP_DTM_DIM].[Proyecto]` | `MacroProyecto` |
-| Estado | `[ADP_DTM_DIM].[Proyecto]` | `Estado` |
+| Orden | Filtro | Tabla origen | Columna valor | Display |
+|-------|--------|-------------|---------------|---------|
+| 1 | Empresa | `[ADP_DTM_DIM].[Proyecto]` | `Empresa` | Nombre directo |
+| 2 | Macroproyecto | `[ADP_DTM_DIM].[Proyecto]` | `MacroProyecto` (código) | `MacroProyecto Descripcion` |
+| 3 | Proyecto | `[ADP_DTM_DIM].[Proyecto]` | `Nombre Proyecto` | Nombre directo |
+| 4 | Estado | `[ADP_DTM_DIM].[Proyecto]` | `Estado` | Nombre directo |
 
-Valores cargados vía `GET /api/filters/{database}/{tipo}` con mapeo explícito para los 4 tipos. Para tipos desconocidos se hace auto-discovery por metadatos.
+### Jerarquía en cascada
+- Al cambiar **Empresa** → se limpian automáticamente Macroproyecto y Proyecto seleccionados
+- Al cambiar **Macroproyecto** → se limpia automáticamente Proyecto seleccionado
+- **Estado** es independiente (no participa en la jerarquía)
+
+Al abrir el dropdown de un filtro hijo, sus opciones se reducen según los padres activos (filtrado client-side con `empresaPorValor` y `metadataPorValor`).
+
+### Enriquecimiento visual por tipo
+
+| Filtro | Subtext | Tooltip |
+|--------|---------|---------|
+| Macroproyecto | Código numérico | Empresa(s) a la que pertenece |
+| Proyecto | Código de proyecto | Empresa · Macroproyecto (descripción) — tooltip custom posición fixed |
+
+El tooltip del filtro Proyecto es un componente custom con `position: fixed` para escapar el `overflow-hidden` del dropdown.
+
+Valores cargados vía `GET /api/filters/{database}/{tipo}` con mapeo explícito. El backend retorna:
+- `valores` — lista de códigos/nombres para SQL injection
+- `empresaPorValor` — `{ código: [empresas] }` (macroproyecto)
+- `descripcionPorValor` — `{ código: descripción }` (macroproyecto)
+- `metadataPorValor` — `{ nombre: { codigo, empresa, macroproyecto } }` (proyecto, con descripción del macro)
 
 Se envían en cada request como `contextoVariables` y `filterMeta` (tabla/columna para el prompt IA).
+
+---
+
+## Dashboard
+
+- Paneles guardados como "favoritos" con SQL base, tipo de respuesta y gráfico
+- Cada panel puede aceptar o ignorar los filtros globales del dashboard (`aceptaFiltrosGlobales`)
+- Barra de filtros en el dashboard con estado **pendiente** / **aplicado** (split): los paneles solo se re-ejecutan al presionar "Aplicar"
+- Paneles prebuilt: usan `POST /api/analyze` con la pregunta clave para aprovechar el SQL preconstruido con filtros
+- Paneles SQL libre: usan `POST /api/analyze/execute` con filtros inyectados cuando hay filtros activos
 
 ---
 
@@ -126,22 +158,27 @@ Se envían en cada request como `contextoVariables` y `filterMeta` (tabla/column
 
 | Componente | Descripción |
 |-----------|-------------|
-| `FILTER_CONFIG` | Definición de los 4 filtros con estilos Tailwind |
-| `FilterDropdown` | Dropdown multiselección con búsqueda y botón Aplicar |
-| `ContextVarsBar` | Barra de filtros en el header |
-| `Dashboard` | Vista de dashboards guardados |
+| `FILTER_CONFIG` | Definición de los 4 filtros con estilos Tailwind (orden jerárquico) |
+| `FILTER_CHILDREN` | Mapa de hijos jerárquicos `{ empresa: ['macroproyecto','proyecto'], macroproyecto: ['proyecto'] }` |
+| `FilterDropdown` | Dropdown multiselección con búsqueda, filtrado jerárquico client-side y tooltip custom |
+| `ContextVarsBar` | Barra de filtros; mantiene `labelMap` para mostrar descripciones en chips |
+| `Dashboard` | Vista de paneles guardados con filtros globales pendientes/aplicados |
+| `DashboardPanel` | Panel individual; aplica o ignora filtros globales según `aceptaFiltrosGlobales` |
 | `SchemaPanel` | Panel lateral con estructura del datamart |
 
 ### Estados principales (App.jsx)
 
 ```javascript
 selectedDb       // BD seleccionada
-contextVars      // { empresa:[], proyecto:[], macroproyecto:[], estado:[] }
+contextVars      // { empresa:[], macroproyecto:[], proyecto:[], estado:[] }
 filterMeta       // { [tipo]: { tabla, columna } }
 vistaActiva      // 'consulta' | 'dashboard'
 showSuggestions  // panel de preguntas sugeridas
 messages         // historial del chat
 schema / vistas  // metadatos de la BD activa
+// Dashboard:
+pendingFilters   // filtros pendientes (aún no aplicados a paneles)
+appliedFilters   // filtros efectivamente aplicados a paneles
 ```
 
 ---
