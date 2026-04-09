@@ -22,40 +22,40 @@
   --grid-rgb: 59 130 246;
 }
 
-/* Noche — azul índigo profundo */
+/* Noche — índigo profundo + acento dorado */
 .theme-night {
-  --ink-950: 4 5 14;
-  --ink-900: 8 10 28;
-  --ink-800: 14 17 46;
-  --ink-700: 22 27 64;
-  --ink-600: 37 46 90;
-  --azure-400: 129 140 248;
-  --azure-500: 99 102 241;
-  --azure-600: 79 70 229;
-  --body-bg: #04050e;
-  --body-color: #e0e7ff;
-  --scrollbar-track: #08091c;
-  --scrollbar-thumb: #25305a;
-  --scrollbar-thumb-hover: #313e72;
-  --grid-rgb: 99 102 241;
+  --ink-950: 15 5 39;
+  --ink-900: 22 8 56;
+  --ink-800: 33 13 82;
+  --ink-700: 48 22 110;
+  --ink-600: 67 35 140;
+  --azure-400: 251 191 36;
+  --azure-500: 245 158 11;
+  --azure-600: 217 119 6;
+  --body-bg: #0f0527;
+  --body-color: #ede9fe;
+  --scrollbar-track: #160838;
+  --scrollbar-thumb: #43238c;
+  --scrollbar-thumb-hover: #5530b0;
+  --grid-rgb: 251 191 36;
 }
 
-/* Día — slate claro profesional */
+/* Día — cielo azul claro + azul intenso */
 .theme-day {
-  --ink-950: 248 250 252;
-  --ink-900: 241 245 249;
-  --ink-800: 226 232 240;
-  --ink-700: 203 213 225;
-  --ink-600: 148 163 184;
-  --azure-400: 37 99 235;
-  --azure-500: 29 78 216;
-  --azure-600: 30 64 175;
-  --body-bg: #f8fafc;
-  --body-color: #0f172a;
-  --scrollbar-track: #e2e8f0;
-  --scrollbar-thumb: #94a3b8;
-  --scrollbar-thumb-hover: #64748b;
-  --grid-rgb: 37 99 235;
+  --ink-950: 240 249 255;
+  --ink-900: 224 242 254;
+  --ink-800: 204 232 252;
+  --ink-700: 179 215 243;
+  --ink-600: 140 190 225;
+  --azure-400: 29 78 216;
+  --azure-500: 28 60 175;
+  --azure-600: 26 46 140;
+  --body-bg: #f0f9ff;
+  --body-color: #0c1a35;
+  --scrollbar-track: #e0f2fe;
+  --scrollbar-thumb: #7ab8d8;
+  --scrollbar-thumb-hover: #4a90b8;
+  --grid-rgb: 29 78 216;
 }
 
 /* ─── Base ────────────────────────────────────────────────────────────────── */
@@ -85,48 +85,54 @@ body {
 /* ─── Day theme — text & border overrides ────────────────────────────────── */
 
 .theme-day :is(.text-white, .text-gray-50, .text-gray-100, .text-gray-200, .text-gray-300) {
-  color: #1e293b;
+  color: #0c1a35;
 }
 
 .theme-day :is(.text-gray-400, .text-gray-500) {
-  color: #475569;
+  color: #2d5070;
 }
 
 .theme-day .text-gray-600 {
-  color: #64748b;
+  color: #4a7090;
 }
 
 .theme-day .text-gray-700 {
-  color: #94a3b8;
+  color: #6a90aa;
 }
 
-/* Accents: mantener emerald y amber, oscurecer azure para contraste */
+/* Accents azure: ya son azul intenso por variable, forzar en texto */
 .theme-day :is(.text-azure-400, .text-azure-300) {
-  color: rgb(var(--azure-500));
+  color: rgb(var(--azure-400));
 }
 
 /* Borders */
 .theme-day :is(.border-gray-700, .border-gray-800) {
-  border-color: #cbd5e1;
+  border-color: #a8d4ec;
 }
 
 .theme-day .border-gray-600 {
-  border-color: #94a3b8;
+  border-color: #7ab8d8;
 }
 
 .theme-day :is(.border-white\/10, .border-white\/15, .border-white\/20) {
-  border-color: #e2e8f0;
+  border-color: #b8ddf0;
 }
 
 /* Placeholder text */
 .theme-day ::placeholder {
-  color: #94a3b8;
+  color: #6a90aa;
 }
 
 /* Inputs */
 .theme-day input,
 .theme-day textarea {
-  color: #1e293b;
+  color: #0c1a35;
+}
+
+/* ─── Night theme — text overrides para acento dorado ───────────────────── */
+
+.theme-night :is(.text-azure-400, .text-azure-300) {
+  color: rgb(var(--azure-400));
 }
 
 /* ─── Animations ──────────────────────────────────────────────────────────── */
