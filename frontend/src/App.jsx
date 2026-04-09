@@ -5,8 +5,30 @@ import {
   RefreshCw, Eye, EyeOff, Code, Server, Layers, Lightbulb,
   Bookmark, BookMarked, Clock, Trash2, PlayCircle, Search,
   Star, LayoutDashboard, MessageSquare, GripVertical, X,
-  SlidersHorizontal, Filter
+  SlidersHorizontal, Filter, Sun, Moon, SunMoon
 } from 'lucide-react'
+
+// ─── Temas ────────────────────────────────────────────────────────────────────
+const THEMES = [
+  { id: 'dark',  label: 'Oscuro',  Icon: Moon,    iconClass: 'text-slate-400'  },
+  { id: 'night', label: 'Noche',   Icon: SunMoon,  iconClass: 'text-indigo-400' },
+  { id: 'day',   label: 'Día',     Icon: Sun,      iconClass: 'text-amber-400'  },
+]
+
+function useTheme() {
+  const [theme, setTheme] = useState(() => localStorage.getItem('app-theme') || 'dark')
+  useEffect(() => {
+    const html = document.documentElement
+    THEMES.forEach(t => html.classList.remove(`theme-${t.id}`))
+    if (theme !== 'dark') html.classList.add(`theme-${theme}`)
+    localStorage.setItem('app-theme', theme)
+  }, [theme])
+  const cycleTheme = () => {
+    const idx = THEMES.findIndex(t => t.id === theme)
+    setTheme(THEMES[(idx + 1) % THEMES.length].id)
+  }
+  return { theme, cycleTheme }
+}
 import {
   BarChart, Bar, LineChart, Line, PieChart, Pie, Cell,
   AreaChart, Area, ScatterChart, Scatter,
@@ -1235,6 +1257,7 @@ function SchemaPanel({ schema, vistas, onClose }) {
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
+  const { theme, cycleTheme } = useTheme()
   const [connected, setConnected] = useState(null)
   const [databases, setDatabases] = useState([])
   const [dbsLoaded, setDbsLoaded] = useState(false)
@@ -1711,6 +1734,21 @@ export default function App() {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Theme toggle */}
+            {(() => {
+              const t = THEMES.find(t => t.id === theme)
+              return (
+                <button
+                  onClick={cycleTheme}
+                  title={`Tema: ${t.label} — click para cambiar`}
+                  className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/20 border border-white/10 hover:border-white/25 transition-colors"
+                >
+                  <t.Icon size={12} className={t.iconClass} />
+                  <span className={`text-[10px] font-mono ${t.iconClass}`}>{t.label}</span>
+                </button>
+              )
+            })()}
+
             {/* Connection status */}
             <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/20 border border-white/10">
               <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-400' : 'bg-red-400'}`}

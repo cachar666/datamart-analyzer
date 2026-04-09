@@ -9,16 +9,16 @@ export default {
       },
       colors: {
         ink: {
-          950: '#050810',
-          900: '#0a0f1e',
-          800: '#111827',
-          700: '#1f2937',
-          600: '#374151',
+          950: 'rgb(var(--ink-950) / <alpha-value>)',
+          900: 'rgb(var(--ink-900) / <alpha-value>)',
+          800: 'rgb(var(--ink-800) / <alpha-value>)',
+          700: 'rgb(var(--ink-700) / <alpha-value>)',
+          600: 'rgb(var(--ink-600) / <alpha-value>)',
         },
         azure: {
-          400: '#60a5fa',
-          500: '#3b82f6',
-          600: '#2563eb',
+          400: 'rgb(var(--azure-400) / <alpha-value>)',
+          500: 'rgb(var(--azure-500) / <alpha-value>)',
+          600: 'rgb(var(--azure-600) / <alpha-value>)',
         },
         emerald: {
           400: '#34d399',

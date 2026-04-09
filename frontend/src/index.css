@@ -2,30 +2,138 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Theme Variables ─────────────────────────────────────────────────────── */
+
+/* Oscuro (default) */
+:root {
+  --ink-950: 5 8 16;
+  --ink-900: 10 15 30;
+  --ink-800: 17 24 39;
+  --ink-700: 31 41 55;
+  --ink-600: 55 65 81;
+  --azure-400: 96 165 250;
+  --azure-500: 59 130 246;
+  --azure-600: 37 99 235;
+  --body-bg: #050810;
+  --body-color: #e2e8f0;
+  --scrollbar-track: #0a0f1e;
+  --scrollbar-thumb: #374151;
+  --scrollbar-thumb-hover: #4b5563;
+  --grid-rgb: 59 130 246;
+}
+
+/* Noche — azul índigo profundo */
+.theme-night {
+  --ink-950: 4 5 14;
+  --ink-900: 8 10 28;
+  --ink-800: 14 17 46;
+  --ink-700: 22 27 64;
+  --ink-600: 37 46 90;
+  --azure-400: 129 140 248;
+  --azure-500: 99 102 241;
+  --azure-600: 79 70 229;
+  --body-bg: #04050e;
+  --body-color: #e0e7ff;
+  --scrollbar-track: #08091c;
+  --scrollbar-thumb: #25305a;
+  --scrollbar-thumb-hover: #313e72;
+  --grid-rgb: 99 102 241;
+}
+
+/* Día — slate claro profesional */
+.theme-day {
+  --ink-950: 248 250 252;
+  --ink-900: 241 245 249;
+  --ink-800: 226 232 240;
+  --ink-700: 203 213 225;
+  --ink-600: 148 163 184;
+  --azure-400: 37 99 235;
+  --azure-500: 29 78 216;
+  --azure-600: 30 64 175;
+  --body-bg: #f8fafc;
+  --body-color: #0f172a;
+  --scrollbar-track: #e2e8f0;
+  --scrollbar-thumb: #94a3b8;
+  --scrollbar-thumb-hover: #64748b;
+  --grid-rgb: 37 99 235;
+}
+
+/* ─── Base ────────────────────────────────────────────────────────────────── */
+
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
 body {
-  background-color: #050810;
-  color: #e2e8f0;
+  background-color: var(--body-bg);
+  color: var(--body-color);
   font-family: 'Syne', sans-serif;
   min-height: 100vh;
+  transition: background-color 0.25s ease, color 0.25s ease;
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: #0a0f1e; }
-::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #4b5563; }
+::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
 
 .grid-bg {
   background-image:
-    linear-gradient(rgba(59, 130, 246, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(59, 130, 246, 0.03) 1px, transparent 1px);
+    linear-gradient(rgb(var(--grid-rgb) / 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--grid-rgb) / 0.03) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 
+/* ─── Day theme — text & border overrides ────────────────────────────────── */
+
+.theme-day :is(.text-white, .text-gray-50, .text-gray-100, .text-gray-200, .text-gray-300) {
+  color: #1e293b;
+}
+
+.theme-day :is(.text-gray-400, .text-gray-500) {
+  color: #475569;
+}
+
+.theme-day .text-gray-600 {
+  color: #64748b;
+}
+
+.theme-day .text-gray-700 {
+  color: #94a3b8;
+}
+
+/* Accents: mantener emerald y amber, oscurecer azure para contraste */
+.theme-day :is(.text-azure-400, .text-azure-300) {
+  color: rgb(var(--azure-500));
+}
+
+/* Borders */
+.theme-day :is(.border-gray-700, .border-gray-800) {
+  border-color: #cbd5e1;
+}
+
+.theme-day .border-gray-600 {
+  border-color: #94a3b8;
+}
+
+.theme-day :is(.border-white\/10, .border-white\/15, .border-white\/20) {
+  border-color: #e2e8f0;
+}
+
+/* Placeholder text */
+.theme-day ::placeholder {
+  color: #94a3b8;
+}
+
+/* Inputs */
+.theme-day input,
+.theme-day textarea {
+  color: #1e293b;
+}
+
+/* ─── Animations ──────────────────────────────────────────────────────────── */
+
 @keyframes pulse-glow {
-  0%, 100% { box-shadow: 0 0 8px rgba(59, 130, 246, 0.3); }
-  50% { box-shadow: 0 0 20px rgba(59, 130, 246, 0.6); }
+  0%, 100% { box-shadow: 0 0 8px rgb(var(--azure-500) / 0.3); }
+  50%       { box-shadow: 0 0 20px rgb(var(--azure-500) / 0.6); }
 }
 
 @keyframes typing {
@@ -39,7 +147,7 @@ body {
 
 @keyframes slide-up {
   from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
+  to   { opacity: 1; transform: translateY(0); }
 }
 
 .slide-up { animation: slide-up 0.3s ease-out; }
