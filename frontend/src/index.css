@@ -4,7 +4,7 @@
 
 /* ─── Theme Variables ─────────────────────────────────────────────────────── */
 
-/* Oscuro (default) */
+/* Oscuro (default) — negro carbón + azul */
 :root {
   --ink-950: 5 8 16;
   --ink-900: 10 15 30;
@@ -14,6 +14,15 @@
   --azure-400: 96 165 250;
   --azure-500: 59 130 246;
   --azure-600: 37 99 235;
+  /* gray estándar Tailwind */
+  --gray-200: 229 231 235;
+  --gray-300: 209 213 219;
+  --gray-400: 156 163 175;
+  --gray-500: 107 114 128;
+  --gray-600: 75 85 99;
+  --gray-700: 55 65 81;
+  --gray-800: 31 41 55;
+  --gray-900: 17 24 39;
   --body-bg: #050810;
   --body-color: #e2e8f0;
   --scrollbar-track: #0a0f1e;
@@ -32,6 +41,15 @@
   --azure-400: 251 191 36;
   --azure-500: 245 158 11;
   --azure-600: 217 119 6;
+  /* gray con tinte índigo/lavanda */
+  --gray-200: 220 214 254;
+  --gray-300: 196 181 253;
+  --gray-400: 167 139 250;
+  --gray-500: 124 108 200;
+  --gray-600: 74 56 150;
+  --gray-700: 45 30 90;
+  --gray-800: 30 16 64;
+  --gray-900: 19 8 45;
   --body-bg: #0f0527;
   --body-color: #ede9fe;
   --scrollbar-track: #160838;
@@ -40,7 +58,7 @@
   --grid-rgb: 251 191 36;
 }
 
-/* Día — cielo azul claro + azul intenso */
+/* Día — cielo azul claro + texto marino oscuro */
 .theme-day {
   --ink-950: 240 249 255;
   --ink-900: 224 242 254;
@@ -50,6 +68,15 @@
   --azure-400: 29 78 216;
   --azure-500: 28 60 175;
   --azure-600: 26 46 140;
+  /* gray invertido: números altos = claro (fondos), números bajos = oscuro (texto) */
+  --gray-200: 12 26 53;
+  --gray-300: 30 58 95;
+  --gray-400: 45 80 112;
+  --gray-500: 74 104 128;
+  --gray-600: 106 144 170;
+  --gray-700: 160 208 232;
+  --gray-800: 200 230 248;
+  --gray-900: 218 241 253;
   --body-bg: #f0f9ff;
   --body-color: #0c1a35;
   --scrollbar-track: #e0f2fe;
@@ -67,7 +94,7 @@ body {
   color: var(--body-color);
   font-family: 'Syne', sans-serif;
   min-height: 100vh;
-  transition: background-color 0.25s ease, color 0.25s ease;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -77,61 +104,29 @@ body {
 
 .grid-bg {
   background-image:
-    linear-gradient(rgb(var(--grid-rgb) / 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(var(--grid-rgb) / 0.03) 1px, transparent 1px);
+    linear-gradient(rgb(var(--grid-rgb) / 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--grid-rgb) / 0.04) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 
-/* ─── Day theme — text & border overrides ────────────────────────────────── */
+/* ─── Day theme — overrides puntuales que no cubren variables ─────────────── */
 
-.theme-day :is(.text-white, .text-gray-50, .text-gray-100, .text-gray-200, .text-gray-300) {
-  color: #0c1a35;
-}
+/* Placeholders e inputs */
+.theme-day ::placeholder { color: rgb(var(--gray-500)); }
+.theme-day input, .theme-day textarea { color: rgb(var(--gray-200)); }
 
-.theme-day :is(.text-gray-400, .text-gray-500) {
-  color: #2d5070;
-}
-
-.theme-day .text-gray-600 {
-  color: #4a7090;
-}
-
-.theme-day .text-gray-700 {
-  color: #6a90aa;
-}
-
-/* Accents azure: ya son azul intenso por variable, forzar en texto */
+/* Accents azure en texto — usar variable directamente */
 .theme-day :is(.text-azure-400, .text-azure-300) {
   color: rgb(var(--azure-400));
 }
 
-/* Borders */
-.theme-day :is(.border-gray-700, .border-gray-800) {
-  border-color: #a8d4ec;
-}
-
-.theme-day .border-gray-600 {
-  border-color: #7ab8d8;
-}
-
+/* Borders con opacidad blanca → convertir a azul claro */
 .theme-day :is(.border-white\/10, .border-white\/15, .border-white\/20) {
-  border-color: #b8ddf0;
+  border-color: rgb(var(--gray-700));
 }
 
-/* Placeholder text */
-.theme-day ::placeholder {
-  color: #6a90aa;
-}
-
-/* Inputs */
-.theme-day input,
-.theme-day textarea {
-  color: #0c1a35;
-}
-
-/* ─── Night theme — text overrides para acento dorado ───────────────────── */
-
-.theme-night :is(.text-azure-400, .text-azure-300) {
+/* ─── Night theme — acento dorado en texto azure ─────────────────────────── */
+.theme-night :is(.text-azure-400, .text-azure-300, .text-azure-200) {
   color: rgb(var(--azure-400));
 }
 
