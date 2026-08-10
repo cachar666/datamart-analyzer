@@ -1,6 +1,9 @@
 # ─── Backend ──────────────────────────────────────────────────────────────────
-backend/DatamartAnalyzer.Api/bin/
-backend/DatamartAnalyzer.Api/obj/
+# Genericos: cubren cualquier proyecto .NET nuevo sin tener que acordarse de
+# agregarlo. Antes estaban por ruta y DatamartAnalyzer.Migrations quedo afuera.
+[Bb]in/
+[Oo]bj/
+
 backend/DatamartAnalyzer.Api/appsettings.Development.json
 backend/DatamartAnalyzer.Api/appsettings.Production.json
 *.user
@@ -16,8 +19,6 @@ frontend/.env.local
 # ─── Docs binarios y extractor compilado ──────────────────────────────────────
 docs/*.docx
 docs/extracted_raw.txt
-docs/extractor/bin/
-docs/extractor/obj/
 
 # ─── IDE ──────────────────────────────────────────────────────────────────────
 .idea/
