@@ -1,0 +1,48 @@
+proyecto: DatamartAnalyzer
+descripcion: "Análisis de datamarts ADPRO/SincoERP en lenguaje natural con IA."
+registro: docs/errors-registry.md
+
+componentes:
+  - nombre: backend
+    arquetipo: sql-server
+    estilo: layered          # Controllers + Services + Repository. NO usa Carter ni CQRS.
+    raiz: backend/DatamartAnalyzer.Api
+    build: "dotnet build"
+    taxonomia: [Schema, Analyze, Prebuilt, Rag, Filters, Store, Migrations, Api]
+
+  - nombre: migraciones
+    arquetipo: sql-server
+    estilo: layered
+    raiz: backend/DatamartAnalyzer.Migrations
+    build: "dotnet build"
+    taxonomia: [Migrations]
+
+  - nombre: frontend
+    arquetipo: frontend-react
+    raiz: frontend
+    package_manager: npm
+    build: "npm run build"
+    taxonomia: [Frontend]
+
+scripts:
+  build: scripts/build.ps1
+  almacen: scripts/almacen.ps1
+  start: iniciar.bat
+  puertos:
+    backend: 5000
+    backendHttps: 7001
+    frontend: 5173
+
+# ── Desviaciones deliberadas respecto del perfil genérico sql-server ──────────
+# Leer antes de "corregir" nada:
+#
+# 1. NO usa Entity Framework Core. La capa de datos es Dapper puro y las migraciones
+#    son scripts SQL versionados con DbUp (backend/DatamartAnalyzer.Migrations/Scripts).
+#    Los checks del perfil sobre `dotnet ef migrations add` y `.Include()` no aplican.
+#
+# 2. El JSON se serializa en camelCase (default de ASP.NET Core). El frontend consume
+#    `.tipoRespuesta`, `.sqlGenerado`. NO agregar PropertyNamingPolicy = null: rompería
+#    el frontend entero. La regla PascalCase del perfil es para otros repos ADPRO.
+#
+# 3. Program.cs registra JsonStringEnumConverter: los enums viajan como string
+#    ("Tabla", "Barras"). Cualquier JsonSerializerOptions nuevo debe incluirlo.

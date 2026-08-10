@@ -27,3 +27,6 @@ docs/extractor/obj/
 .DS_Store
 Thumbs.db
 *.log
+
+frontend/dist-check*/
+frontend/vite.config.js.timestamp-*.mjs

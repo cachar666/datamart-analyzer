@@ -19,6 +19,7 @@ public class SqlServerService : ISqlServerService
     private readonly string _baseConnectionString;
     private readonly int _timeoutSeconds;
     private readonly int _maxRows;
+    private readonly IDatamartConnectionResolver _conexiones;
     private readonly ILogger<SqlServerService> _logger;
 
     private List<DatabaseInfo>? _cachedDatabases;
@@ -32,8 +33,10 @@ public class SqlServerService : ISqlServerService
         "master", "model", "msdb", "tempdb"
     };
 
-    public SqlServerService(IConfiguration config, ILogger<SqlServerService> logger)
+    public SqlServerService(IConfiguration config, IDatamartConnectionResolver conexiones,
+                            ILogger<SqlServerService> logger)
     {
+        _conexiones = conexiones;
         _baseConnectionString = config.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
         _timeoutSeconds = config.GetValue("QuerySettings:TimeoutSeconds", 30);
@@ -93,6 +96,11 @@ public class SqlServerService : ISqlServerService
 
     public async Task<bool> ExisteBaseDatosAsync(string database)
     {
+        // Si hay un perfil declarado (ERP o appsettings) la pregunta no es "existe en
+        // este servidor" sino "se puede abrir": la base puede estar en otro lado.
+        if (await _conexiones.BuscarAsync(database) is not null)
+            return await _conexiones.EsAlcanzableAsync(database);
+
         // Primero revisa el cache
         if (_cachedDatabases is not null)
             return _cachedDatabases.Any(d => d.Nombre.Equals(database, StringComparison.OrdinalIgnoreCase));
@@ -115,6 +123,20 @@ public class SqlServerService : ISqlServerService
 
     private async Task<List<DatabaseInfo>> CargarBasesDatosDesdeServidorAsync()
     {
+        var declarados = await _conexiones.ListarDeclaradosAsync();
+
+        // En modo ERP el datamart lo dicta dbo.ADPConfig: no se enumera nada mas,
+        // aunque el servidor local tenga otras bases.
+        if (_conexiones.ModoErp)
+        {
+            var soloErp = new List<DatabaseInfo>();
+            foreach (var d in declarados)
+                soloErp.Add(new DatabaseInfo(d.Base, await _conexiones.EsAlcanzableAsync(d.Base)));
+
+            _logger.LogInformation("Modo ERP: {n} datamart(s) declarado(s).", soloErp.Count);
+            return soloErp;
+        }
+
         await using var conn = new SqlConnection(BuildConnectionString("master"));
         await conn.OpenAsync();
 
@@ -144,7 +166,18 @@ public class SqlServerService : ISqlServerService
             }
         });
 
-        var resultados = await Task.WhenAll(tareas);
+        var resultados = (await Task.WhenAll(tareas)).ToList();
+
+        // Los datamarts declarados en appsettings pueden estar en OTRO servidor y por
+        // eso no aparecen en la enumeracion local. Se suman sin duplicar.
+        foreach (var d in declarados)
+        {
+            if (resultados.Any(r => r.Nombre.Equals(d.Base, StringComparison.OrdinalIgnoreCase)))
+                continue;
+
+            resultados.Add(new DatabaseInfo(d.Base, await _conexiones.EsAlcanzableAsync(d.Base)));
+        }
+
         return resultados.OrderBy(d => d.Nombre).ToList();
     }
 
@@ -152,7 +185,7 @@ public class SqlServerService : ISqlServerService
     {
         try
         {
-            await using var conn = new SqlConnection(BuildConnectionString(database));
+            await using var conn = new SqlConnection(await _conexiones.ResolverAsync(database));
             await conn.OpenAsync();
 
             var count = await conn.ExecuteScalarAsync<int>(@"
@@ -203,7 +236,7 @@ public class SqlServerService : ISqlServerService
         var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            await using var conn = new SqlConnection(BuildConnectionString(database));
+            await using var conn = new SqlConnection(await _conexiones.ResolverAsync(database));
             await conn.OpenAsync();
 
             using var cmd = new SqlCommand(sqlTrimmed, conn)

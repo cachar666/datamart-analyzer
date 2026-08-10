@@ -17,6 +17,10 @@ builder.Services.AddSingleton<ISqlServerService, SqlServerService>();
 builder.Services.AddSingleton<ISchemaService, SchemaService>();
 builder.Services.AddSingleton<IDocumentService, DocumentService>();
 builder.Services.AddSingleton<IPrebuiltQueriesService, PrebuiltQueriesService>();
+builder.Services.AddSingleton<IStoreRepository, StoreRepository>();
+builder.Services.AddSingleton<IErpContextService, ErpContextService>();
+builder.Services.AddSingleton<IDatamartConnectionResolver, DatamartConnectionResolver>();
+builder.Services.AddSingleton<IStoreMigrator, StoreMigrator>();
 builder.Services.AddHttpClient<IAnthropicService, AnthropicService>();
 
 // CORS
@@ -44,7 +48,14 @@ if (app.Environment.IsDevelopment())
 // Forzar carga del documento ERP al iniciar
 app.Services.GetRequiredService<IDocumentService>();
 
-app.UseHttpsRedirection();
+// En desarrollo el frontend usa el proxy de Vite hacia http://localhost:5000.
+// Redirigir a HTTPS provoca un 307 hacia https://localhost:7001 que el navegador
+// rechaza con ERR_CERT_AUTHORITY_INVALID (certificado de dev no confiado).
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
 app.UseCors();
 app.UseAuthorization();
 app.MapControllers();

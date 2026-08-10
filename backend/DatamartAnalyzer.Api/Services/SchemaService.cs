@@ -13,28 +13,24 @@ public interface ISchemaService
 
 public class SchemaService : ISchemaService
 {
-    private readonly string _baseConnectionString;
+    private readonly IDatamartConnectionResolver _conexiones;
     private readonly ILogger<SchemaService> _logger;
 
     // Cache simple en memoria por base de datos
     private readonly Dictionary<string, (SchemaContext Contexto, DateTime CachedAt)> _cache = new();
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(10);
 
-    public SchemaService(IConfiguration config, ILogger<SchemaService> logger)
+    public SchemaService(IDatamartConnectionResolver conexiones, ILogger<SchemaService> logger)
     {
-        _baseConnectionString = config.GetConnectionString("DefaultConnection")
-            ?? throw new InvalidOperationException("Connection string not found.");
+        _conexiones = conexiones;
         _logger = logger;
     }
 
-    private string BuildConnectionString(string database)
-    {
-        var b = new SqlConnectionStringBuilder(_baseConnectionString)
-        {
-            InitialCatalog = database
-        };
-        return b.ConnectionString;
-    }
+    /// <summary>
+    /// La conexion la decide IDatamartConnectionResolver: el datamart puede vivir en
+    /// otro servidor y con otras credenciales que DefaultConnection.
+    /// </summary>
+    private Task<string> ConexionAsync(string database) => _conexiones.ResolverAsync(database);
 
     public async Task<SchemaContext> ObtenerContextoCompletoAsync(string database)
     {
@@ -55,7 +51,7 @@ public class SchemaService : ISchemaService
 
     public async Task<List<SchemaColumn>> ObtenerSchemaAsync(string database)
     {
-        await using var conn = new SqlConnection(BuildConnectionString(database));
+        await using var conn = new SqlConnection(await ConexionAsync(database));
         await conn.OpenAsync();
 
         try
@@ -151,7 +147,7 @@ public class SchemaService : ISchemaService
 
     public async Task<List<ViewInfo>> ObtenerVistasAsync(string database)
     {
-        await using var conn = new SqlConnection(BuildConnectionString(database));
+        await using var conn = new SqlConnection(await ConexionAsync(database));
         await conn.OpenAsync();
 
         const string sql = @"
