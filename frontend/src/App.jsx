@@ -12,7 +12,7 @@ import {
 const THEMES = [
   { id: 'dark',  label: 'Oscuro',  Icon: Moon,    iconClass: 'text-slate-400'  },
   { id: 'night', label: 'Noche',   Icon: SunMoon,  iconClass: 'text-indigo-400' },
-  { id: 'day',   label: 'Día',     Icon: Sun,      iconClass: 'text-amber-400'  },
+  { id: 'day',   label: 'Light',   Icon: Sun,      iconClass: 'text-amber-400'  },
 ]
 
 function useTheme() {
@@ -88,6 +88,117 @@ const fmtAxis = v => {
 }
 const isNumericCol = (datos, key) => datos.slice(0, 5).every(r => r[key] === null || r[key] === undefined || !isNaN(Number(r[key])))
 
+// ─── Detección de filtros soportados por una pregunta ─────────────────────────
+// Regex espejos de Controllers.SqlUsaDimensionInsumo (backend)
+const SQL_USA_PROYECTO = /\[?ADP_DTM_DIM\]?\.\[?Proyecto\]?\b/i
+const SQL_USA_INSUMO   = /\[?ADP_DTM_DIM\]?\.\[?Insumo\]?\b/i
+
+// Para saved/AI queries tenemos el SQL → detección exacta por regex
+function detectarFiltrosDesdeSql(sql) {
+  if (!sql) return []
+  const soportados = []
+  if (SQL_USA_PROYECTO.test(sql)) soportados.push('empresa', 'macroproyecto', 'proyecto', 'estado')
+  if (SQL_USA_INSUMO.test(sql))   soportados.push('insumo')
+  return soportados
+}
+
+// Para prebuilts (sugerencias) NO tenemos el SQL en el cliente → heurística
+// por palabras clave. La inyección real de filtros es server-side (InjectarFiltrosPrebuilt),
+// así que esta función solo sirve para la marca visual.
+function detectarFiltrosDesdePregunta(pregunta) {
+  if (!pregunta) return []
+  const t = pregunta.toLowerCase()
+  // Casi todos los prebuilts unen Proyecto (alias p); excepciones raras no
+  // justifican complejidad extra. Default: soporta los 4 filtros sobre Proyecto.
+  const soportados = ['empresa', 'macroproyecto', 'proyecto', 'estado']
+  // Sigla/keyword matching para Insumo: menciones explícitas + siglas del set
+  // "Familia 3/4/5" que sí tocan la dimensión Insumo (APU, DUC, III, IONC, IRI, RCI).
+  if (/insumo|material|\bapu\b|\bduc\b|\biii\b|\bionc\b|\biri\b|\brci\b|rr\/apu/.test(t)) {
+    soportados.push('insumo')
+  }
+  return soportados
+}
+
+// Dada una lista de tipos activos, devuelve los que NO aparecen en soportados
+function filtrosActivosIgnorados(soportados, activos) {
+  if (!activos?.length) return []
+  return activos.filter(a => !soportados.includes(a))
+}
+
+// ─── Filter Support Badges ────────────────────────────────────────────────────
+// Muestra 5 dots (uno por filtro en FILTER_CONFIG) con opacidad reducida para los
+// no soportados. Si hay filtros activos ignorados, muestra un aviso ámbar al final.
+function FilterSupportBadges({ soportados = [], activos = [], className = '' }) {
+  const ignorados = filtrosActivosIgnorados(soportados, activos)
+  return (
+    <div className={`flex items-center gap-0.5 ${className}`}>
+      {FILTER_CONFIG.map(({ tipo, label, dotBg }) => {
+        const esSoportado = soportados.includes(tipo)
+        const esActivoIgnorado = ignorados.includes(tipo)
+        let title = `${label}: ${esSoportado ? 'aplica' : 'no aplica a esta consulta'}`
+        if (esActivoIgnorado) title += ' (filtro activo — se ignora aquí)'
+        return (
+          <span
+            key={tipo}
+            title={title}
+            className={`w-1.5 h-1.5 rounded-full ${dotBg} transition-opacity ${
+              esSoportado ? 'opacity-90' : 'opacity-20'
+            } ${esActivoIgnorado ? 'ring-1 ring-amber-400/60' : ''}`}
+          />
+        )
+      })}
+      {ignorados.length > 0 && (
+        <span
+          title={`Filtros activos que esta consulta ignora: ${ignorados.join(', ')}`}
+          className="ml-1 text-[9px] text-amber-400 font-mono leading-none"
+        >
+          !{ignorados.length}
+        </span>
+      )}
+    </div>
+  )
+}
+
+// ─── Suggestion Card ──────────────────────────────────────────────────────────
+function SuggestionCard({ s, color, uso, selectedDb, filtrosActivos = [], onSelect }) {
+  const soportados = detectarFiltrosDesdePregunta(s.pregunta)
+  const ignorados = filtrosActivosIgnorados(soportados, filtrosActivos)
+  const hayIgnorados = ignorados.length > 0
+
+  // Anillo ámbar sutil cuando la pregunta ignora filtros activos
+  const warnRing = hayIgnorados ? 'ring-1 ring-amber-500/40' : ''
+
+  return (
+    <button onClick={onSelect} disabled={!selectedDb}
+      className={`text-left rounded-xl border transition-all group flex flex-col gap-1.5 p-0 overflow-hidden ${warnRing} ${
+        selectedDb
+          ? 'bg-ink-800 border-gray-700 hover:border-gray-500 hover:bg-ink-700 cursor-pointer'
+          : 'bg-ink-800/50 border-gray-800 cursor-not-allowed opacity-60'
+      }`}>
+      {/* Accent bar top */}
+      <div className="h-0.5 w-full flex-shrink-0" style={{ background: color }} />
+      <div className="px-3 pb-3 pt-1 flex flex-col gap-2 flex-1">
+        {/* Pregunta */}
+        <p className="text-sm text-gray-300 group-hover:text-white transition-colors leading-snug line-clamp-3">{s.pregunta}</p>
+        {/* Footer de la card */}
+        <div className="flex items-center justify-between mt-auto pt-1 gap-2">
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded flex-shrink-0" style={{ background: color + '22', color }}>
+            {s.categoria}
+          </span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <FilterSupportBadges soportados={soportados} activos={filtrosActivos} />
+            {uso > 0 && (
+              <span className="text-[10px] font-mono text-amber-400 flex items-center gap-1">
+                <span>🔥</span>{uso}x
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+    </button>
+  )
+}
+
 // ─── Chart Renderer ───────────────────────────────────────────────────────────
 function ChartDisplay({ datos, grafico }) {
   if (!datos?.length || !grafico) return null
@@ -105,6 +216,24 @@ function ChartDisplay({ datos, grafico }) {
   const tooltipStyle = { background: '#111827', border: '1px solid #374151', borderRadius: 8, fontSize: 12 }
   const tooltipTextStyle = { color: '#f9fafb' }
   const tooltipFmt = (value) => [fmtNum(value), campoEjeY]
+
+  const hasPctDesviacion = datos.length > 0 && 'PctDesviacion' in datos[0]
+  const CustomTooltipPareto = ({ active, payload, label }) => {
+    if (!active || !payload?.length) return null
+    const row = payload[0]?.payload ?? {}
+    return (
+      <div style={tooltipStyle} className="px-3 py-2">
+        <p style={{ color: '#f9fafb', marginBottom: 4, fontWeight: 600 }}>{label}</p>
+        <p style={{ color: '#f9fafb' }}>{campoEjeY}: <span style={{ color: row[campoEjeY] >= 0 ? '#f87171' : '#34d399' }}>{fmtNum(row[campoEjeY])}</span></p>
+        {row.PctDesviacion != null && (
+          <p style={{ color: '#fbbf24' }}>% Desviación: {fmtNum(row.PctDesviacion)}%</p>
+        )}
+        {row.ParetoAcumuladoPct != null && (
+          <p style={{ color: '#a78bfa' }}>Pareto acum.: {fmtNum(row.ParetoAcumuladoPct)}%</p>
+        )}
+      </div>
+    )
+  }
 
   const renderChart = () => {
     switch (tipo?.toLowerCase()) {
@@ -147,7 +276,10 @@ function ChartDisplay({ datos, grafico }) {
             <CartesianGrid strokeDasharray="3 3" stroke="#1f2937" />
             <XAxis dataKey={campoEjeX} stroke="#6b7280" tick={{ fontSize: 11 }} />
             <YAxis stroke="#6b7280" tick={{ fontSize: 11 }} tickFormatter={fmtAxis} width={60} />
-            <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipTextStyle} itemStyle={tooltipTextStyle} formatter={tooltipFmt} />
+            {hasPctDesviacion
+              ? <Tooltip content={<CustomTooltipPareto />} />
+              : <Tooltip contentStyle={tooltipStyle} labelStyle={tooltipTextStyle} itemStyle={tooltipTextStyle} formatter={tooltipFmt} />
+            }
             <Legend />
             <Bar dataKey={campoEjeY} fill={color} radius={[4, 4, 0, 0]} />
           </BarChart>
@@ -256,6 +388,8 @@ function DataTable({ datos, compact = false }) {
 // ─── Message Bubble ───────────────────────────────────────────────────────────
 function MessageBubble({ msg, devMode, pregunta, onSave, isSaved, usage, onFavorite, isFavorite }) {
   const [showSql, setShowSql] = useState(false)
+  const { theme } = useTheme()
+  const isDay = theme === 'day'
   const isUser = msg.role === 'user'
 
   if (isUser) {
@@ -362,7 +496,7 @@ function MessageBubble({ msg, devMode, pregunta, onSave, isSaved, usage, onFavor
                 {showSql ? <EyeOff size={11} /> : <Eye size={11} />}
               </button>
               {showSql && (
-                <pre className="mt-2 p-3 bg-ink-950 border border-gray-800 rounded-lg text-xs text-emerald-400 font-mono overflow-x-auto whitespace-pre-wrap">
+                <pre className={`mt-2 p-3 bg-ink-950 border border-gray-800 rounded-lg text-xs font-mono overflow-x-auto whitespace-pre-wrap ${isDay ? 'text-emerald-700' : 'text-emerald-400'}`}>
                   {sqlGenerado}
                 </pre>
               )}
@@ -385,7 +519,9 @@ function MessageBubble({ msg, devMode, pregunta, onSave, isSaved, usage, onFavor
                   title={isFavorite ? 'Ya está en el Dashboard' : 'Agregar al Dashboard de favoritos'}
                   className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all font-mono ${
                     isFavorite
-                      ? 'bg-amber-900/30 border-amber-600/40 text-amber-400 cursor-default'
+                      ? isDay
+                        ? 'bg-amber-50 border-amber-300 text-amber-700 cursor-default'
+                        : 'bg-amber-900/30 border-amber-600/40 text-amber-400 cursor-default'
                       : 'bg-ink-900 border-gray-700 text-gray-500 hover:text-amber-400 hover:border-amber-500/40 hover:bg-amber-900/10'
                   }`}
                 >
@@ -399,7 +535,9 @@ function MessageBubble({ msg, devMode, pregunta, onSave, isSaved, usage, onFavor
                   title={isSaved ? 'Consulta ya guardada en historial' : 'Guardar pregunta y SQL para reutilizar sin costo de IA'}
                   className={`flex items-center gap-1.5 text-xs px-2.5 py-1.5 rounded-lg border transition-all font-mono ${
                     isSaved
-                      ? 'bg-emerald-900/30 border-emerald-700/40 text-emerald-400 cursor-default'
+                      ? isDay
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700 cursor-default'
+                        : 'bg-emerald-900/30 border-emerald-700/40 text-emerald-400 cursor-default'
                       : 'bg-ink-900 border-gray-700 text-gray-500 hover:text-amber-400 hover:border-amber-500/40 hover:bg-amber-900/10'
                   }`}
                 >
@@ -540,7 +678,16 @@ function DashboardPanel({ fav, database, appliedFilters, onToggleGlobal, onRemov
   const showChart = (tipoResp === 'Grafico' || tipoResp === 'TablaMasGrafico') && fav.grafico
   const showTable = tipoResp === 'Tabla' || tipoResp === 'TablaMasGrafico' || tipoResp === 'TablaMasTexto'
   const globalActive = fav.aceptaFiltrosGlobales !== false
-  const activeGlobalCount = globalActive ? Object.values(appliedFilters ?? {}).filter(v => Array.isArray(v) && v.length > 0).length : 0
+  const appliedActivos = Object.entries(appliedFilters ?? {})
+    .filter(([, v]) => Array.isArray(v) && v.length > 0)
+    .map(([k]) => k)
+  const activeGlobalCount = globalActive ? appliedActivos.length : 0
+  // Detectar filtros soportados por este panel
+  const soportados = fav.esPrebuilt && fav.prebuiltKey
+    ? detectarFiltrosDesdePregunta(fav.prebuiltKey)
+    : detectarFiltrosDesdeSql(fav.sqlBase ?? fav.sql)
+  // Solo resaltar si el panel acepta filtros globales y algunos no aplican
+  const hayIgnorados = globalActive && filtrosActivosIgnorados(soportados, appliedActivos).length > 0
 
   return (
     <div
@@ -548,7 +695,13 @@ function DashboardPanel({ fav, database, appliedFilters, onToggleGlobal, onRemov
       onDragStart={onDragStart}
       onDragOver={e => { e.preventDefault(); onDragOver() }}
       onDrop={onDrop}
-      className={`bg-ink-800 border rounded-2xl overflow-hidden flex flex-col transition-all ${isDragOver ? 'border-amber-500/60 shadow-lg shadow-amber-900/20' : 'border-gray-700'}`}
+      className={`bg-ink-800 border rounded-2xl overflow-hidden flex flex-col transition-all ${
+        isDragOver
+          ? 'border-amber-500/60 shadow-lg shadow-amber-900/20'
+          : hayIgnorados
+            ? 'border-amber-500/30'
+            : 'border-gray-700'
+      }`}
     >
       {/* Panel header */}
       <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-700 bg-ink-900/40">
@@ -557,6 +710,12 @@ function DashboardPanel({ fav, database, appliedFilters, onToggleGlobal, onRemov
         </div>
         <Star size={11} className="text-amber-400 fill-amber-400 flex-shrink-0" />
         <span className="text-xs font-semibold text-gray-200 flex-1 truncate">{fav.titulo}</span>
+        {/* Badges de compatibilidad (siempre visibles) */}
+        <FilterSupportBadges
+          soportados={soportados}
+          activos={globalActive ? appliedActivos : []}
+          className="mr-0.5"
+        />
         {/* Toggle filtros globales */}
         <button
           onClick={onToggleGlobal}
@@ -608,7 +767,7 @@ function DashboardPanel({ fav, database, appliedFilters, onToggleGlobal, onRemov
 }
 
 // ─── Dashboard View ───────────────────────────────────────────────────────────
-const EMPTY_DASH_FILTERS = { empresa: [], proyecto: [], macroproyecto: [], estado: [] }
+const EMPTY_DASH_FILTERS = { empresa: [], proyecto: [], macroproyecto: [], estado: [], insumo: [] }
 
 function Dashboard({ dashboards, setDashboards, database, onGoConsulta }) {
   const [activeDashId, setActiveDashId] = useState(() => dashboards[0]?.id ?? null)
@@ -859,11 +1018,16 @@ function Dashboard({ dashboards, setDashboards, database, onGoConsulta }) {
 }
 
 // ─── Filter Config ────────────────────────────────────────────────────────────
+// inputType: 'select' (default, dropdown multi-selección) | 'text' (LIKE sobre descripción)
 const FILTER_CONFIG = [
-  { tipo: 'empresa',       label: 'Empresa',       dotBg: 'bg-azure-400',   chipBg: 'bg-azure-900/30',   chipBorder: 'border-azure-500/40',   chipText: 'text-azure-200'   },
-  { tipo: 'macroproyecto', label: 'Macropro',       dotBg: 'bg-purple-400',  chipBg: 'bg-purple-900/30',  chipBorder: 'border-purple-500/40',  chipText: 'text-purple-200'  },
-  { tipo: 'proyecto',      label: 'Proyecto',       dotBg: 'bg-emerald-400', chipBg: 'bg-emerald-900/30', chipBorder: 'border-emerald-500/40', chipText: 'text-emerald-200' },
-  { tipo: 'estado',        label: 'Estado',         dotBg: 'bg-amber-400',   chipBg: 'bg-amber-900/30',   chipBorder: 'border-amber-500/40',   chipText: 'text-amber-200'   },
+  { tipo: 'empresa',       label: 'Empresa',        inputType: 'select', dotBg: 'bg-azure-400',   chipBg: 'bg-azure-900/50',   chipBorder: 'border-azure-500/70',   chipText: 'text-azure-200',   inactiveBorder: 'border-azure-700/50',   inactiveText: 'text-azure-400/60'   },
+  { tipo: 'macroproyecto', label: 'Macropro',       inputType: 'select', dotBg: 'bg-purple-400',  chipBg: 'bg-purple-900/50',  chipBorder: 'border-purple-500/70',  chipText: 'text-purple-200',  inactiveBorder: 'border-purple-700/50',  inactiveText: 'text-purple-400/60'  },
+  { tipo: 'proyecto',      label: 'Proyecto',       inputType: 'select', dotBg: 'bg-emerald-400', chipBg: 'bg-emerald-900/50', chipBorder: 'border-emerald-500/70', chipText: 'text-emerald-200', inactiveBorder: 'border-emerald-700/50', inactiveText: 'text-emerald-400/60' },
+  { tipo: 'estado',        label: 'Estado',         inputType: 'select', dotBg: 'bg-amber-400',   chipBg: 'bg-amber-900/50',   chipBorder: 'border-amber-500/70',   chipText: 'text-amber-200',   inactiveBorder: 'border-amber-700/50',   inactiveText: 'text-amber-400/60'   },
+  { tipo: 'insumo',        label: 'Insumo',         inputType: 'text',   dotBg: 'bg-cyan-400',    chipBg: 'bg-cyan-900/50',    chipBorder: 'border-cyan-500/70',    chipText: 'text-cyan-200',    inactiveBorder: 'border-cyan-700/50',    inactiveText: 'text-cyan-400/60',
+    // Metadata SQL fija (no hay endpoint para cargar opciones; es texto libre)
+    meta: { tabla: 'ADP_DTM_DIM.Insumo', columna: 'Insumo Descripcion' },
+    placeholder: 'Buscar descripción (contains)...' },
 ]
 
 // Hijos jerárquicos: al cambiar un padre se limpian sus hijos
@@ -1063,6 +1227,71 @@ function FilterDropdown({ tipo, label, database, selected, onChange, onMeta, onL
   )
 }
 
+// ─── Filter Text Input (popup compacto para búsqueda por texto LIKE) ──────────
+function FilterTextInput({ tipo, label, placeholder, selected, onChange, onApply, onClose }) {
+  const initial = (selected && selected[0]) || ''
+  const [text, setText] = useState(initial)
+  const inputRef = useRef(null)
+
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 50) }, [])
+
+  const applyAndClose = () => {
+    const trimmed = text.trim()
+    onChange(trimmed ? [trimmed] : [])
+    onClose()
+    onApply?.()
+  }
+
+  const clearAndClose = () => {
+    onChange([])
+    onClose()
+    onApply?.()
+  }
+
+  return (
+    <div className="absolute top-full mt-1 left-0 w-72 bg-ink-800 border border-gray-700 rounded-xl shadow-2xl z-50 overflow-hidden">
+      <div className="p-2 border-b border-gray-700">
+        <div className="flex items-center gap-2 bg-ink-900 border border-gray-700 focus-within:border-azure-500/50 rounded-lg px-2.5 py-1.5 transition-colors">
+          <Search size={12} className="text-gray-500 flex-shrink-0" />
+          <input
+            ref={inputRef}
+            type="text"
+            value={text}
+            onChange={e => setText(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { e.preventDefault(); applyAndClose() }
+              if (e.key === 'Escape') { e.preventDefault(); onClose() }
+            }}
+            placeholder={placeholder || `Buscar ${label.toLowerCase()}...`}
+            className="flex-1 bg-transparent text-xs text-gray-300 placeholder-gray-600 outline-none"
+          />
+          {text && <button onClick={() => setText('')} className="text-gray-600 hover:text-gray-300 text-xs leading-none">✕</button>}
+        </div>
+        <p className="text-[10px] text-gray-600 mt-1.5 leading-relaxed">
+          Se aplica como <span className="font-mono text-gray-500">LIKE '%texto%'</span> sobre la descripción del insumo.
+          Si la consulta no involucra la dimensión Insumo, se ignora automáticamente.
+        </p>
+      </div>
+
+      <div className="border-t border-gray-700 px-3 py-2 flex items-center justify-between">
+        <button
+          onClick={clearAndClose}
+          disabled={!initial && !text}
+          className="text-[11px] text-red-400 hover:text-red-300 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          Limpiar
+        </button>
+        <button
+          onClick={applyAndClose}
+          className="text-xs px-3 py-1 bg-azure-600/20 border border-azure-500/30 text-azure-400 rounded-lg hover:bg-azure-600/30 transition-colors"
+        >
+          Aplicar
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // ─── Context Vars Bar ─────────────────────────────────────────────────────────
 function ContextVarsBar({ database, contextVars, onUpdate, onMeta, onApply, onClearAll }) {
   const [openDropdown, setOpenDropdown] = useState(null)
@@ -1084,15 +1313,29 @@ function ContextVarsBar({ database, contextVars, onUpdate, onMeta, onApply, onCl
     return () => document.removeEventListener('mousedown', handleClick)
   }, [openDropdown])
 
+  // Auto-registrar meta de filtros de tipo 'text' (tienen meta hardcodeada en FILTER_CONFIG)
+  useEffect(() => {
+    FILTER_CONFIG.forEach(f => {
+      if (f.inputType === 'text' && f.meta) onMeta(f.tipo, f.meta)
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const hasAny = FILTER_CONFIG.some(f => (contextVars[f.tipo] || []).length > 0)
 
   return (
     <div className="flex items-center gap-1.5 flex-wrap mb-2 min-h-[26px]">
       <SlidersHorizontal size={11} className="text-gray-600 flex-shrink-0" />
-      {FILTER_CONFIG.map(({ tipo, label, dotBg, chipBg, chipBorder, chipText }) => {
+      {FILTER_CONFIG.map(({ tipo, label, inputType, placeholder, dotBg, chipBg, chipBorder, chipText, inactiveBorder, inactiveText }) => {
         const selected = contextVars[tipo] || []
         const isActive = selected.length > 0
         const isOpen = openDropdown === tipo
+        const isText = inputType === 'text'
+
+        // Texto a mostrar en el chip
+        const chipValue = isText
+          ? (selected[0] || '')
+          : (labelMap[tipo]?.[selected[0]] ?? selected[0])
 
         return (
           <div
@@ -1107,8 +1350,11 @@ function ContextVarsBar({ database, contextVars, onUpdate, onMeta, onApply, onCl
                   onClick={() => setOpenDropdown(isOpen ? null : tipo)}
                   className={`flex items-center gap-1 ${chipText} hover:opacity-80 transition-opacity`}
                 >
-                  <span className="text-[11px] max-w-[90px] truncate">{labelMap[tipo]?.[selected[0]] ?? selected[0]}</span>
-                  {selected.length > 1 && (
+                  <span className="text-[10px] font-semibold opacity-70 mr-0.5">{label}</span>
+                  <span className="text-[11px] max-w-[140px] truncate">
+                    {isText ? `"${chipValue}"` : chipValue}
+                  </span>
+                  {!isText && selected.length > 1 && (
                     <span className="text-[9px] bg-white/20 text-white rounded-full px-1 font-bold">+{selected.length - 1}</span>
                   )}
                 </button>
@@ -1119,26 +1365,38 @@ function ContextVarsBar({ database, contextVars, onUpdate, onMeta, onApply, onCl
             ) : (
               <button
                 onClick={() => setOpenDropdown(isOpen ? null : tipo)}
-                className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-400 border border-dashed border-gray-700 hover:border-gray-600 rounded-full px-2 py-0.5 transition-colors"
+                className={`flex items-center gap-1 text-[10px] ${inactiveText} hover:opacity-100 border ${inactiveBorder} rounded-full px-2 py-0.5 transition-opacity`}
               >
-                <span className={`w-1 h-1 rounded-full ${dotBg} opacity-60`} />
-                + {label}
+                <span className={`w-1 h-1 rounded-full ${dotBg} opacity-70`} />
+                {label}
               </button>
             )}
 
             {isOpen && (
-              <FilterDropdown
-                tipo={tipo}
-                label={label}
-                database={database}
-                selected={selected}
-                onChange={(vals) => onUpdate(tipo, vals)}
-                onMeta={(meta) => onMeta(tipo, meta)}
-                onLabels={(descMap) => handleLabels(tipo, descMap)}
-                onApply={onApply}
-                onClose={() => setOpenDropdown(null)}
-                parentContext={contextVars}
-              />
+              isText ? (
+                <FilterTextInput
+                  tipo={tipo}
+                  label={label}
+                  placeholder={placeholder}
+                  selected={selected}
+                  onChange={(vals) => onUpdate(tipo, vals)}
+                  onApply={onApply}
+                  onClose={() => setOpenDropdown(null)}
+                />
+              ) : (
+                <FilterDropdown
+                  tipo={tipo}
+                  label={label}
+                  database={database}
+                  selected={selected}
+                  onChange={(vals) => onUpdate(tipo, vals)}
+                  onMeta={(meta) => onMeta(tipo, meta)}
+                  onLabels={(descMap) => handleLabels(tipo, descMap)}
+                  onApply={onApply}
+                  onClose={() => setOpenDropdown(null)}
+                  parentContext={contextVars}
+                />
+              )
             )}
           </div>
         )
@@ -1278,6 +1536,11 @@ export default function App() {
   const [showSuggestions, setShowSuggestions] = useState(false)
   const [suggestionTab, setSuggestionTab] = useState('adpro')
   const [suggestionSearch, setSuggestionSearch] = useState('')
+  const [suggestionCategory, setSuggestionCategory] = useState('todas')
+  const [suggestionSort, setSuggestionSort] = useState('default') // 'default' | 'uso' | 'az'
+  const [suggestionUsage, setSuggestionUsage] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('suggestion_usage') || '{}') } catch { return {} }
+  })
   const [dbSearch, setDbSearch] = useState('')
   const [selectedModel, setSelectedModel] = useState('claude-haiku-4-5-20251001')
   const [modelOpen, setModelOpen] = useState(false)
@@ -1288,7 +1551,7 @@ export default function App() {
   const [vistaActiva, setVistaActiva] = useState('consulta')
   const [dashboards, setDashboards] = useState(() => loadDashboards())
   const [favModal, setFavModal] = useState(null) // { titulo, sql, tipoRespuesta, grafico }
-  const [contextVars, setContextVars] = useState({ empresa: [], proyecto: [], macroproyecto: [], estado: [] })
+  const [contextVars, setContextVars] = useState({ empresa: [], proyecto: [], macroproyecto: [], estado: [], insumo: [] })
   const [filterMeta, setFilterMeta] = useState({})
   const filterMetaRef = useRef({})
   const messagesEndRef = useRef(null)
@@ -1370,7 +1633,8 @@ export default function App() {
     setDbOpen(false)
     setMessages([])
     setSchema(null)
-    setContextVars({ empresa: [], proyecto: [], macroproyecto: [], estado: [] })
+    setContextVars({ empresa: [], proyecto: [], macroproyecto: [], estado: [], insumo: [] })
+    setVistaActiva(dashboards.length > 0 ? 'dashboard' : 'sugeridas')
     setLoadingSchema(true)
     try {
       const ctx = await datamartApi.getSchema(db.nombre)
@@ -1571,7 +1835,7 @@ export default function App() {
   }, [])
 
   const handleFilterClearAll = useCallback(() => {
-    setContextVars({ empresa: [], proyecto: [], macroproyecto: [], estado: [] })
+    setContextVars({ empresa: [], proyecto: [], macroproyecto: [], estado: [], insumo: [] })
   }, [])
 
   const handleFilterApply = useCallback(() => {
@@ -1641,37 +1905,99 @@ export default function App() {
   }, [])
 
   const handleSuggestion = useCallback((pregunta) => {
+    const newUsage = { ...suggestionUsage, [pregunta]: (suggestionUsage[pregunta] || 0) + 1 }
+    setSuggestionUsage(newUsage)
+    try { localStorage.setItem('suggestion_usage', JSON.stringify(newUsage)) } catch {}
     handleSend(pregunta)
-  }, [handleSend])
+  }, [handleSend, suggestionUsage])
 
   const suggestionsAdpro = [
-    'Listar proyectos con su respectivo estado',
-    'Listar los macroproyectos del sistema incluyendo la empresa y sus respectivos codigos',
-    '¿Cuál es el costo ejecutado vs presupuestado por proyecto de construcción?',
-    '¿Cuáles son los capítulos o ítems de obra con mayor desviación entre presupuesto y ejecución?',
-    '¿Qué materiales e insumos tienen mayor consumo en los proyectos activos?',
-    '¿Cuál es el costo acumulado por tipo de recurso (materiales, mano de obra, equipos) por proyecto?',
-    '¿Cómo ha evolucionado el gasto mensual de obra en cada proyecto este año?',
-    '¿Cuáles son los contratos de subcontratistas con mayor valor ejecutado vs contratado?',
-    '¿Qué proveedores concentran el mayor gasto en materiales de construcción?',
-    '¿Cuál es el costo por metro cuadrado construido en cada proyecto activo?',
-    '¿Cuál es el valor del inventario de mis proyectos en ejecución?',
+    { pregunta: 'Listar proyectos con su respectivo estado', categoria: 'Proyectos' },
+    { pregunta: 'Listar los macroproyectos del sistema incluyendo la empresa y sus respectivos codigos', categoria: 'Proyectos' },
+    { pregunta: '¿Cuál es el costo ejecutado vs presupuestado por proyecto de construcción?', categoria: 'Costos' },
+    { pregunta: '¿Cuáles son los capítulos o ítems de obra con mayor desviación entre presupuesto y ejecución?', categoria: 'Costos' },
+    { pregunta: '¿Cuál es el costo acumulado por tipo de recurso (materiales, mano de obra, equipos) por proyecto?', categoria: 'Costos' },
+    { pregunta: '¿Cómo ha evolucionado el gasto mensual de obra en cada proyecto este año?', categoria: 'Costos' },
+    { pregunta: '¿Cuál es el costo por metro cuadrado construido en cada proyecto activo?', categoria: 'Costos' },
+    { pregunta: '¿Qué materiales e insumos tienen mayor consumo en los proyectos activos?', categoria: 'Materiales' },
+    { pregunta: '¿Qué proveedores concentran el mayor gasto en materiales de construcción?', categoria: 'Materiales' },
+    { pregunta: '¿Cuál es el valor del inventario de mis proyectos en ejecución?', categoria: 'Materiales' },
+    { pregunta: 'Participación porcentual de cada tipo de insumo en el costo consumido total', categoria: 'Materiales' },
+    { pregunta: '¿Cuáles son los contratos de subcontratistas con mayor valor ejecutado vs contratado?', categoria: 'Contratos' },
+    { pregunta: '¿Cuál es el valor de actas cobradas por subcontratista en cada proyecto?', categoria: 'Contratos' },
+    { pregunta: 'Pareto de los proyectos según su desviación del asegurado respecto al proyectado (Asegurado mayor que el proyectado), adicionalmente organizados de forma descendente según su ejecución fisica', categoria: 'Análisis' },
+    { pregunta: 'Distribución porcentual por tipo de costo: presupuestado, proyectado y consumido', categoria: 'Análisis' },
+    { pregunta: 'Distribución porcentual por tipo de insumo: presupuestado, proyectado y consumido', categoria: 'Análisis' },
+    { pregunta: 'Proyección de demanda y costo unitario de los principales insumos de compras — tendencia OLS con ajuste estacional', categoria: 'Análisis' },
+    { pregunta: '¿Cuál es el índice de desempeño del costo (CPI) de cada proyecto activo?', categoria: 'Análisis' },
+    { pregunta: '¿Cuántos proyectos hay por ciudad y estado?', categoria: 'Proyectos' },
+    { pregunta: '¿Cuál es el costo ejecutado vs presupuestado agrupado por macroproyecto?', categoria: 'Costos' },
+    { pregunta: '¿Cuál es el valor mensual de materiales ingresados al almacén este año?', categoria: 'Materiales' },
+    { pregunta: '¿Cuál es el stock estimado de insumos (entradas menos salidas) en proyectos activos?', categoria: 'Materiales' },
+    // Familia 1 — Desviación y control del baseline
+    { pregunta: 'IRA — ¿Cuánto se ha desviado el proyectado actual respecto al presupuestado original por proyecto?', categoria: 'Control' },
+    { pregunta: 'CDT — ¿Qué capítulos concentran la mayor parte de la desviación total del proyecto (análisis Pareto por capítulo)?', categoria: 'Control' },
+    { pregunta: 'VAC — ¿Cuánto se estima que costará adicional al presupuesto original y cuál es el costo final estimado (EAC) de cada proyecto?', categoria: 'Control' },
+    // Familia 2 — Compromiso contractual y aseguramiento
+    { pregunta: '%A — ¿Qué porcentaje del presupuesto proyectado ya está asegurado mediante compras o contratos firmados por proyecto?', categoria: 'Aseguramiento' },
+    { pregunta: 'ICC — ¿Cuánto del dinero ya comprometido (asegurado) se ha convertido efectivamente en costo causado (invertido) por proyecto?', categoria: 'Aseguramiento' },
+    { pregunta: 'RCC — ¿Qué proporción del aseguramiento está cubierta por órdenes de compra versus contratos de subcontrato por proyecto?', categoria: 'Aseguramiento' },
+    { pregunta: '%NA — ¿Cuánto del presupuesto de cada capítulo aún no tiene respaldo contractual ni orden de compra?', categoria: 'Aseguramiento' },
+    // Familia 3 — Eficiencia operativa en ejecución
+    { pregunta: 'RR/APU — ¿Cuánto valor ganado se obtiene por cada peso consumido en cada capítulo de obra (rendimiento relativo Ejecutado/Consumido)?', categoria: 'Eficiencia' },
+    { pregunta: 'IONC — ¿Cuánto del insumo causado contablemente (invertido) aún no ha sido consumido en obra por proyecto?', categoria: 'Eficiencia' },
+    { pregunta: 'TQP — ¿A qué ritmo se está quemando el presupuesto mensualmente en cada proyecto activo este año (Tasa de Quemado Presupuestal)?', categoria: 'Eficiencia' },
+    { pregunta: 'SPI — ¿Cuánto falta por invertir para completar cada proyecto (saldo por invertir)?', categoria: 'Eficiencia' },
+    { pregunta: 'RCI — ¿Qué porcentaje del costo causado (invertido) ha sido efectivamente consumido en obra y qué parte permanece en almacén?', categoria: 'Eficiencia' },
+    // Familia 4 — Calidad de precio y gestión de compras
+    { pregunta: 'DUC — ¿En cuánto se desvía el valor real de los insumos comprados respecto al presupuestado por ítem?', categoria: 'Compras' },
+    { pregunta: 'IRI — ¿Qué ítems presentan simultáneamente mayor desviación de precio y alto peso dentro del presupuesto (índice de riesgo de ítem)?', categoria: 'Compras' },
+    { pregunta: 'III — ¿Cómo ha evolucionado el precio unitario de los insumos más comprados entre compras sucesivas (inflación interna de insumo)?', categoria: 'Compras' },
+    // Familia 5 — Proyección y aprendizaje
+    { pregunta: 'IAFF — ¿El ritmo de causación contable (invertido) está alineado con el avance físico reportado en cada proyecto?', categoria: 'Proyección' },
+    { pregunta: 'EPP — ¿Qué tan confiable es el proyectado como predictor del costo real invertido en cada proyecto?', categoria: 'Proyección' },
+    { pregunta: 'BIP — Comparativo del desempeño de todas las obras activas del portafolio en los siete conceptos de control (benchmark interno)', categoria: 'Proyección' },
+    { pregunta: 'GMC — ¿Cómo han evolucionado mes a mes los siete conceptos de control (presupuestado, proyectado, asegurado, invertido, consumido, ejecutado) en el portafolio activo?', categoria: 'Proyección' },
   ]
 
   const suggestionsSrm = [
-    '¿Cuáles son las licitaciones con mayor valor adjudicado?',
-    '¿Qué proveedores han recibido más adjudicaciones y por qué valor?',
-    '¿Cuál es el valor total adjudicado en licitaciones por proyecto?',
-    '¿Qué actividades concentran el mayor valor en las licitaciones?',
-    '¿Cuáles son los proveedores adjudicados por proyecto en licitaciones?',
-    '¿Cuántas licitaciones se han creado por mes y cuál es su valor?',
-    '¿Cuál es el valor licitado vs presupuestado por actividad?',
-    '¿Qué insumos se incluyen con mayor valor en las licitaciones?',
-    '¿Cuál es el resumen de adjudicaciones por estado del proveedor?',
-    '¿Cuáles son las licitaciones más recientes con sus proveedores adjudicados?',
+    { pregunta: '¿Cuáles son las licitaciones con mayor valor adjudicado?', categoria: 'Licitaciones' },
+    { pregunta: '¿Cuántas licitaciones se han creado por mes y cuál es su valor?', categoria: 'Licitaciones' },
+    { pregunta: '¿Cuáles son las licitaciones más recientes con sus proveedores adjudicados?', categoria: 'Licitaciones' },
+    { pregunta: '¿Cuál es el valor licitado vs presupuestado por actividad?', categoria: 'Licitaciones' },
+    { pregunta: '¿Qué proveedores han recibido más adjudicaciones y por qué valor?', categoria: 'Proveedores' },
+    { pregunta: '¿Cuáles son los proveedores adjudicados por proyecto en licitaciones?', categoria: 'Proveedores' },
+    { pregunta: '¿Cuál es el resumen de adjudicaciones por estado del proveedor?', categoria: 'Proveedores' },
+    { pregunta: '¿De qué ciudades provienen los proveedores con mayor valor adjudicado?', categoria: 'Proveedores' },
+    { pregunta: '¿Cuál es el valor total adjudicado en licitaciones por proyecto?', categoria: 'Adjudicaciones' },
+    { pregunta: '¿Qué actividades concentran el mayor valor en las licitaciones?', categoria: 'Adjudicaciones' },
+    { pregunta: '¿Qué insumos se incluyen con mayor valor en las licitaciones?', categoria: 'Adjudicaciones' },
   ]
 
-  const suggestions = suggestionTab === 'adpro' ? suggestionsAdpro : suggestionsSrm
+  const catColorsAdpro = {
+    Proyectos: '#3b82f6', Costos: '#f59e0b', Materiales: '#10b981',
+    Contratos: '#f97316', Análisis: '#8b5cf6',
+    Control: '#ef4444', Aseguramiento: '#6366f1',
+    Eficiencia: '#14b8a6', Compras: '#fb923c', Proyección: '#a855f7',
+  }
+  const catColorsSrm  = { Licitaciones: '#6366f1', Proveedores: '#06b6d4', Adjudicaciones: '#ec4899' }
+  const catColors = suggestionTab === 'adpro' ? catColorsAdpro : catColorsSrm
+
+  const allSuggestions = suggestionTab === 'adpro' ? suggestionsAdpro : suggestionsSrm
+  const categories = [...new Set(allSuggestions.map(s => s.categoria))]
+
+  const getSuggestionList = (cat, search, sort) => {
+    let list = allSuggestions
+    if (cat === 'top') list = list.filter(s => (suggestionUsage[s.pregunta] || 0) > 0)
+    else if (cat !== 'todas') list = list.filter(s => s.categoria === cat)
+    if (search) list = list.filter(s => s.pregunta.toLowerCase().includes(search.toLowerCase()))
+    if (sort === 'uso' || cat === 'top') list = [...list].sort((a, b) => (suggestionUsage[b.pregunta] || 0) - (suggestionUsage[a.pregunta] || 0))
+    else if (sort === 'az') list = [...list].sort((a, b) => a.pregunta.localeCompare(b.pregunta))
+    return list
+  }
+
+  // Compatibilidad con usos anteriores (inline empty-state)
+  const suggestions = allSuggestions
 
   return (
     <div className="h-screen flex flex-col bg-ink-950 grid-bg overflow-hidden">
@@ -1723,10 +2049,10 @@ export default function App() {
                 )}
               </button>
               <button
-                onClick={() => { setVistaActiva('consulta'); setShowSuggestions(v => !v); setSuggestionSearch('') }}
+                onClick={() => { setVistaActiva(vistaActiva === 'sugeridas' ? 'consulta' : 'sugeridas'); setSuggestionSearch('') }}
                 disabled={!selectedDb}
                 title={!selectedDb ? 'Selecciona una base de datos primero' : 'Preguntas sugeridas'}
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${!selectedDb ? 'opacity-35 cursor-not-allowed text-white/30' : showSuggestions ? 'bg-amber-600/20 text-amber-300 border border-amber-500/30' : 'text-white/50 hover:text-white/80'}`}
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-medium transition-all ${!selectedDb ? 'opacity-35 cursor-not-allowed text-white/30' : vistaActiva === 'sugeridas' ? 'bg-amber-600/20 text-amber-300 border border-amber-500/30' : 'text-white/50 hover:text-white/80'}`}
               >
                 <Lightbulb size={11} /> Sugeridas
               </button>
@@ -1887,7 +2213,7 @@ export default function App() {
         </div>
 
         {/* Filtros de contexto en el header — solo en consulta con BD seleccionada */}
-        {selectedDb && vistaActiva === 'consulta' && !sqlMode && (
+        {selectedDb && (vistaActiva === 'consulta' || vistaActiva === 'sugeridas') && !sqlMode && (
           <div className="border-t border-white/10 py-1.5">
             <ContextVarsBar
               database={selectedDb}
@@ -1914,13 +2240,132 @@ export default function App() {
           />
         )}
 
+        {/* Suggestions Page View */}
+        {vistaActiva === 'sugeridas' && (
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Header: módulo + búsqueda + ordenar */}
+            <div className="flex items-center justify-between px-5 py-3 border-b border-gray-800 flex-shrink-0 gap-3 bg-ink-900/60">
+              <div className="flex items-center gap-3 flex-shrink-0">
+                <Lightbulb size={14} className="text-amber-400" />
+                <span className="text-sm font-semibold text-white">Preguntas sugeridas</span>
+                <div className="flex items-center gap-1 bg-black/30 rounded-lg p-0.5 border border-gray-700">
+                  <button onClick={() => { setSuggestionTab('adpro'); setSuggestionCategory('todas') }}
+                    className={`px-3 py-1 rounded-md text-xs font-mono font-medium transition-all ${suggestionTab === 'adpro' ? 'bg-azure-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>ADPRO</button>
+                  <button onClick={() => { setSuggestionTab('srm'); setSuggestionCategory('todas') }}
+                    className={`px-3 py-1 rounded-md text-xs font-mono font-medium transition-all ${suggestionTab === 'srm' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>SRM</button>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 flex-1 min-w-0">
+                <div className="flex items-center gap-2 bg-ink-800 border border-gray-700 focus-within:border-azure-500/50 rounded-xl px-3 py-1.5 transition-colors flex-1 min-w-0">
+                  <Search size={12} className="text-gray-500 flex-shrink-0" />
+                  <input autoFocus type="text" value={suggestionSearch}
+                    onChange={e => setSuggestionSearch(e.target.value)}
+                    placeholder="Buscar pregunta..."
+                    className="flex-1 bg-transparent text-sm text-gray-300 placeholder-gray-600 outline-none min-w-0" />
+                  {suggestionSearch && <button onClick={() => setSuggestionSearch('')} className="text-gray-600 hover:text-gray-300"><X size={12} /></button>}
+                </div>
+                <select value={suggestionSort} onChange={e => setSuggestionSort(e.target.value)}
+                  className="bg-ink-800 border border-gray-700 text-xs text-gray-400 rounded-lg px-2 py-1.5 outline-none cursor-pointer hover:border-gray-600 flex-shrink-0">
+                  <option value="default">Por categoría</option>
+                  <option value="uso">Más usadas</option>
+                  <option value="az">A → Z</option>
+                </select>
+              </div>
+              <button onClick={() => setVistaActiva('consulta')} title="Ir a consulta" className="text-gray-500 hover:text-gray-200 transition-colors p-1 rounded-lg hover:bg-white/10 flex-shrink-0">
+                <MessageSquare size={15} />
+              </button>
+            </div>
+
+            {/* Chips de categoría */}
+            <div className="flex items-center gap-1.5 px-5 py-2.5 border-b border-gray-800 flex-shrink-0 overflow-x-auto bg-ink-900/40">
+              {[{ key: 'top', label: '⭐ Top' }, { key: 'todas', label: 'Todas' }, ...categories.map(c => ({ key: c, label: c }))].map(({ key, label }) => {
+                const isActive = suggestionCategory === key
+                const color = catColors[key] || null
+                const topCount = key === 'top' ? allSuggestions.filter(s => (suggestionUsage[s.pregunta] || 0) > 0).length : null
+                return (
+                  <button key={key} onClick={() => setSuggestionCategory(key)}
+                    className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all border ${
+                      isActive ? 'text-white border-transparent' : 'text-gray-500 border-gray-700 hover:text-gray-300 hover:border-gray-600 bg-transparent'
+                    }`}
+                    style={isActive ? { background: color || (key === 'top' ? '#92400e' : '#374151'), borderColor: 'transparent' } : {}}>
+                    {label}{topCount !== null && topCount > 0 && <span className="ml-1 text-amber-400">{topCount}</span>}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Warning sin BD */}
+            {!selectedDb && (
+              <div className="flex items-center gap-2 px-5 py-2 bg-amber-900/20 border-b border-amber-800/30 flex-shrink-0">
+                <AlertCircle size={12} className="text-amber-400 flex-shrink-0" />
+                <span className="text-xs font-mono text-amber-400">Selecciona una base de datos para ejecutar sugerencias</span>
+              </div>
+            )}
+
+            {/* Grid de preguntas */}
+            <div className="overflow-y-auto p-5 flex-1">
+              {(() => {
+                const list = getSuggestionList(suggestionCategory, suggestionSearch, suggestionSort)
+                // Filtros globales actualmente aplicados (para señalar cards incompatibles)
+                const filtrosActivos = Object.entries(contextVars)
+                  .filter(([, v]) => Array.isArray(v) && v.length > 0)
+                  .map(([k]) => k)
+                if (list.length === 0) return (
+                  <p className="text-sm text-gray-600 font-mono text-center py-10">
+                    {suggestionCategory === 'top' ? 'Aún no hay preguntas ejecutadas. Usa alguna sugerida para que aparezca aquí.' : `Sin resultados${suggestionSearch ? ` para "${suggestionSearch}"` : ''}`}
+                  </p>
+                )
+                const grouped = (suggestionCategory === 'todas' && suggestionSort === 'default')
+                if (grouped) {
+                  return categories.map(cat => {
+                    const catList = list.filter(s => s.categoria === cat)
+                    if (!catList.length) return null
+                    const color = catColors[cat] || '#6b7280'
+                    return (
+                      <div key={cat} className="mb-6">
+                        <div className="flex items-center gap-2 mb-2.5">
+                          <span className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: color }} />
+                          <span className="text-xs font-mono font-semibold uppercase tracking-wider" style={{ color }}>{cat}</span>
+                          <span className="text-xs font-mono text-gray-700">({catList.length})</span>
+                        </div>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                          {catList.map((s, i) => <SuggestionCard key={i} s={s} color={color} uso={suggestionUsage[s.pregunta] || 0} selectedDb={selectedDb} filtrosActivos={filtrosActivos} onSelect={() => { if (!selectedDb) return; setVistaActiva('consulta'); handleSuggestion(s.pregunta) }} />)}
+                        </div>
+                      </div>
+                    )
+                  })
+                }
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                    {list.map((s, i) => {
+                      const color = catColors[s.categoria] || '#6b7280'
+                      return <SuggestionCard key={i} s={s} color={color} uso={suggestionUsage[s.pregunta] || 0} selectedDb={selectedDb} filtrosActivos={filtrosActivos} onSelect={() => { if (!selectedDb) return; setVistaActiva('consulta'); handleSuggestion(s.pregunta) }} />
+                    })}
+                  </div>
+                )
+              })()}
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-2 border-t border-gray-800 flex-shrink-0 flex items-center justify-between bg-ink-900/40">
+              <span className="text-[11px] font-mono text-gray-600">
+                {getSuggestionList(suggestionCategory, suggestionSearch, suggestionSort).length} pregunta(s)
+                {suggestionSearch && ` · "${suggestionSearch}"`}
+              </span>
+              <button onClick={() => setVistaActiva('consulta')} className="text-[11px] font-mono text-gray-600 hover:text-gray-400 transition-colors flex items-center gap-1">
+                <MessageSquare size={10} /> Ir a consulta
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Schema Panel */}
         {vistaActiva === 'consulta' && showSchema && schema && (
           <SchemaPanel schema={schema} vistas={vistas} onClose={() => setShowSchema(false)} />
         )}
 
         {/* Chat Area */}
-        <div className={`flex-1 flex flex-col overflow-hidden ${vistaActiva === 'dashboard' ? 'hidden' : ''}`}>
+        <div className={`flex-1 flex flex-col overflow-hidden ${vistaActiva === 'dashboard' || vistaActiva === 'sugeridas' ? 'hidden' : ''}`}>
 
           {/* Messages */}
           <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
@@ -2004,33 +2449,6 @@ export default function App() {
               )
             })}
 
-            {/* Suggestions (empty state) */}
-            {selectedDb && !loadingSchema && messages.length <= 1 && (
-              <div className="mt-6">
-                <div className="flex items-center gap-3 mb-3">
-                  <p className="text-xs font-mono text-gray-500 uppercase tracking-wider">Sugerencias de preguntas</p>
-                  <div className="flex items-center gap-1 bg-ink-900 rounded-lg p-0.5 border border-gray-700">
-                    <button
-                      onClick={() => setSuggestionTab('adpro')}
-                      className={`px-2.5 py-1 rounded-md text-xs font-mono font-medium transition-all ${suggestionTab === 'adpro' ? 'bg-azure-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                    >ADPRO</button>
-                    <button
-                      onClick={() => setSuggestionTab('srm')}
-                      className={`px-2.5 py-1 rounded-md text-xs font-mono font-medium transition-all ${suggestionTab === 'srm' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}
-                    >SRM</button>
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 gap-2">
-                  {suggestions.map((s, i) => (
-                    <button key={i} onClick={() => handleSuggestion(s)}
-                      className="text-left px-4 py-3 bg-ink-800 hover:bg-ink-700 border border-gray-700 hover:border-azure-500/40 rounded-xl text-sm text-gray-300 transition-all">
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Panel flotante de historial */}
             {showHistory && (
               <div className="fixed bottom-24 left-1/2 -translate-x-1/2 w-full max-w-2xl px-4 z-40">
@@ -2051,8 +2469,20 @@ export default function App() {
                     </div>
                   ) : (
                     <div className="max-h-80 overflow-y-auto divide-y divide-gray-800">
-                      {savedQueries.map(q => (
-                        <div key={q.id} className="flex items-start gap-3 px-4 py-3 hover:bg-ink-700 transition-colors group">
+                      {(() => {
+                        const filtrosActivos = Object.entries(contextVars)
+                          .filter(([, v]) => Array.isArray(v) && v.length > 0)
+                          .map(([k]) => k)
+                        return savedQueries.map(q => {
+                          const soportados = detectarFiltrosDesdeSql(q.sql)
+                          const hayIgnorados = filtrosActivosIgnorados(soportados, filtrosActivos).length > 0
+                          return (
+                        <div
+                          key={q.id}
+                          className={`flex items-start gap-3 px-4 py-3 hover:bg-ink-700 transition-colors group ${
+                            hayIgnorados ? 'border-l-2 border-amber-500/40' : ''
+                          }`}
+                        >
                           <button
                             onClick={() => handleRunSaved(q)}
                             disabled={sending}
@@ -2063,6 +2493,7 @@ export default function App() {
                             <div className="flex items-center gap-2 mt-1">
                               <span className="text-[10px] font-mono text-gray-600">{q.tipoRespuesta}</span>
                               <span className="text-[10px] font-mono text-gray-700">{new Date(q.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                              <FilterSupportBadges soportados={soportados} activos={filtrosActivos} />
                             </div>
                           </button>
                           <div className="flex items-center gap-1 flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -2083,99 +2514,11 @@ export default function App() {
                             </button>
                           </div>
                         </div>
-                      ))}
+                          )
+                        })
+                      })()}
                     </div>
                   )}
-                </div>
-              </div>
-            )}
-
-            {/* Panel full-page de sugerencias — placeholder, moved to body level */}
-            {false && (
-              <div>
-                <div className="w-full max-w-3xl bg-ink-900 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100vh - 80px)' }}>
-                  {/* Header */}
-                  <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-800 flex-shrink-0">
-                    <div className="flex items-center gap-3">
-                      <Lightbulb size={15} className="text-amber-400" />
-                      <span className="text-sm font-semibold text-white">Preguntas sugeridas</span>
-                      <div className="flex items-center gap-1 bg-black/30 rounded-lg p-0.5 border border-gray-700">
-                        <button onClick={() => setSuggestionTab('adpro')}
-                          className={`px-3 py-1 rounded-md text-xs font-mono font-medium transition-all ${suggestionTab === 'adpro' ? 'bg-azure-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-                          ADPRO
-                        </button>
-                        <button onClick={() => setSuggestionTab('srm')}
-                          className={`px-3 py-1 rounded-md text-xs font-mono font-medium transition-all ${suggestionTab === 'srm' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-                          SRM
-                        </button>
-                      </div>
-                    </div>
-                    <button onClick={() => setShowSuggestions(false)} className="text-gray-500 hover:text-gray-200 transition-colors p-1 rounded-lg hover:bg-white/10">
-                      <X size={16} />
-                    </button>
-                  </div>
-
-                  {/* Search */}
-                  <div className="px-5 py-3 border-b border-gray-800 flex-shrink-0">
-                    <div className="flex items-center gap-2 bg-ink-800 border border-gray-700 focus-within:border-azure-500/50 rounded-xl px-3 py-2 transition-colors">
-                      <Search size={13} className="text-gray-500 flex-shrink-0" />
-                      <input
-                        autoFocus
-                        type="text"
-                        value={suggestionSearch}
-                        onChange={e => setSuggestionSearch(e.target.value)}
-                        placeholder="Filtrar preguntas..."
-                        className="flex-1 bg-transparent text-sm text-gray-300 placeholder-gray-600 outline-none"
-                      />
-                      {suggestionSearch && (
-                        <button onClick={() => setSuggestionSearch('')} className="text-gray-600 hover:text-gray-300 transition-colors">
-                          <X size={13} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Sin BD warning */}
-                  {!selectedDb && (
-                    <div className="flex items-center gap-2 px-5 py-2.5 bg-amber-900/20 border-b border-amber-800/30 flex-shrink-0">
-                      <AlertCircle size={12} className="text-amber-400 flex-shrink-0" />
-                      <span className="text-xs font-mono text-amber-400">Selecciona una base de datos para ejecutar sugerencias</span>
-                    </div>
-                  )}
-
-                  {/* Grid de preguntas */}
-                  <div className="overflow-y-auto p-4 flex-1">
-                    {(() => {
-                      const filtered = suggestions.filter(s => !suggestionSearch || s.toLowerCase().includes(suggestionSearch.toLowerCase()))
-                      return filtered.length === 0
-                        ? <p className="text-sm text-gray-600 font-mono text-center py-8">Sin resultados para "{suggestionSearch}"</p>
-                        : (
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                            {filtered.map((s, i) => (
-                              <button key={i}
-                                onClick={() => { if (!selectedDb) return; setShowSuggestions(false); handleSuggestion(s) }}
-                                disabled={!selectedDb}
-                                className={`text-left px-4 py-3 rounded-xl border text-sm transition-all ${
-                                  selectedDb
-                                    ? 'bg-ink-800 border-gray-700 hover:border-azure-500/50 hover:bg-ink-700 text-gray-300 hover:text-white'
-                                    : 'bg-ink-800/50 border-gray-800 text-gray-600 cursor-not-allowed'
-                                }`}>
-                                {s}
-                              </button>
-                            ))}
-                          </div>
-                        )
-                    })()}
-                  </div>
-
-                  {/* Footer count */}
-                  <div className="px-5 py-2 border-t border-gray-800 flex-shrink-0 flex items-center justify-between">
-                    <span className="text-[11px] font-mono text-gray-600">
-                      {suggestions.filter(s => !suggestionSearch || s.toLowerCase().includes(suggestionSearch.toLowerCase())).length} pregunta(s)
-                      {suggestionSearch && ` · filtrando "${suggestionSearch}"`}
-                    </span>
-                    <span className="text-[11px] font-mono text-gray-700">Esc para cerrar</span>
-                  </div>
                 </div>
               </div>
             )}
@@ -2248,97 +2591,6 @@ export default function App() {
           </div>
         </div>
 
-        {/* Panel full-page de sugerencias — sobre el body, respeta el header */}
-        {showSuggestions && (
-          <div className="absolute inset-0 z-40 flex items-start justify-center pt-8 px-4 pb-8"
-            style={{ background: 'rgba(10,14,20,0.88)', backdropFilter: 'blur(4px)' }}
-            onClick={e => { if (e.target === e.currentTarget) setShowSuggestions(false) }}>
-            <div className="w-full max-w-3xl bg-ink-900 border border-gray-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col" style={{ maxHeight: 'calc(100% - 32px)' }}>
-              {/* Header */}
-              <div className="flex items-center justify-between px-5 py-3.5 border-b border-gray-800 flex-shrink-0">
-                <div className="flex items-center gap-3">
-                  <Lightbulb size={15} className="text-amber-400" />
-                  <span className="text-sm font-semibold text-white">Preguntas sugeridas</span>
-                  <div className="flex items-center gap-1 bg-black/30 rounded-lg p-0.5 border border-gray-700">
-                    <button onClick={() => setSuggestionTab('adpro')}
-                      className={`px-3 py-1 rounded-md text-xs font-mono font-medium transition-all ${suggestionTab === 'adpro' ? 'bg-azure-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-                      ADPRO
-                    </button>
-                    <button onClick={() => setSuggestionTab('srm')}
-                      className={`px-3 py-1 rounded-md text-xs font-mono font-medium transition-all ${suggestionTab === 'srm' ? 'bg-purple-600 text-white' : 'text-gray-500 hover:text-gray-300'}`}>
-                      SRM
-                    </button>
-                  </div>
-                </div>
-                <button onClick={() => setShowSuggestions(false)} className="text-gray-500 hover:text-gray-200 transition-colors p-1 rounded-lg hover:bg-white/10">
-                  <X size={16} />
-                </button>
-              </div>
-
-              {/* Search */}
-              <div className="px-5 py-3 border-b border-gray-800 flex-shrink-0">
-                <div className="flex items-center gap-2 bg-ink-800 border border-gray-700 focus-within:border-azure-500/50 rounded-xl px-3 py-2 transition-colors">
-                  <Search size={13} className="text-gray-500 flex-shrink-0" />
-                  <input
-                    autoFocus
-                    type="text"
-                    value={suggestionSearch}
-                    onChange={e => setSuggestionSearch(e.target.value)}
-                    placeholder="Filtrar preguntas..."
-                    className="flex-1 bg-transparent text-sm text-gray-300 placeholder-gray-600 outline-none"
-                  />
-                  {suggestionSearch && (
-                    <button onClick={() => setSuggestionSearch('')} className="text-gray-600 hover:text-gray-300 transition-colors">
-                      <X size={13} />
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Sin BD warning */}
-              {!selectedDb && (
-                <div className="flex items-center gap-2 px-5 py-2.5 bg-amber-900/20 border-b border-amber-800/30 flex-shrink-0">
-                  <AlertCircle size={12} className="text-amber-400 flex-shrink-0" />
-                  <span className="text-xs font-mono text-amber-400">Selecciona una base de datos para ejecutar sugerencias</span>
-                </div>
-              )}
-
-              {/* Grid */}
-              <div className="overflow-y-auto p-4 flex-1">
-                {(() => {
-                  const filtered = suggestions.filter(s => !suggestionSearch || s.toLowerCase().includes(suggestionSearch.toLowerCase()))
-                  return filtered.length === 0
-                    ? <p className="text-sm text-gray-600 font-mono text-center py-8">Sin resultados para "{suggestionSearch}"</p>
-                    : (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {filtered.map((s, i) => (
-                          <button key={i}
-                            onClick={() => { if (!selectedDb) return; setShowSuggestions(false); handleSuggestion(s) }}
-                            disabled={!selectedDb}
-                            className={`text-left px-4 py-3 rounded-xl border text-sm transition-all ${
-                              selectedDb
-                                ? 'bg-ink-800 border-gray-700 hover:border-azure-500/50 hover:bg-ink-700 text-gray-300 hover:text-white'
-                                : 'bg-ink-800/50 border-gray-800 text-gray-600 cursor-not-allowed'
-                            }`}>
-                            {s}
-                          </button>
-                        ))}
-                      </div>
-                    )
-                })()}
-              </div>
-
-              {/* Footer */}
-              <div className="px-5 py-2 border-t border-gray-800 flex-shrink-0 flex items-center justify-between">
-                <span className="text-[11px] font-mono text-gray-600">
-                  {suggestions.filter(s => !suggestionSearch || s.toLowerCase().includes(suggestionSearch.toLowerCase())).length} pregunta(s)
-                  {suggestionSearch && ` · filtrando "${suggestionSearch}"`}
-                </span>
-                <span className="text-[11px] font-mono text-gray-700">Esc para cerrar</span>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Favorite Modal */}

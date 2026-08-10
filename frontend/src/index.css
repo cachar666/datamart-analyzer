@@ -4,13 +4,13 @@
 
 /* ─── Theme Variables ─────────────────────────────────────────────────────── */
 
-/* Oscuro (default) — negro carbón + azul */
+/* Oscuro (default) — carbón suave + azul */
 :root {
-  --ink-950: 5 8 16;
-  --ink-900: 10 15 30;
-  --ink-800: 17 24 39;
-  --ink-700: 31 41 55;
-  --ink-600: 55 65 81;
+  --ink-950: 9 13 22;
+  --ink-900: 14 20 38;
+  --ink-800: 22 30 50;
+  --ink-700: 34 45 65;
+  --ink-600: 58 70 90;
   --azure-400: 96 165 250;
   --azure-500: 59 130 246;
   --azure-600: 37 99 235;
@@ -18,71 +18,73 @@
   --gray-200: 229 231 235;
   --gray-300: 209 213 219;
   --gray-400: 156 163 175;
-  --gray-500: 107 114 128;
-  --gray-600: 75 85 99;
-  --gray-700: 55 65 81;
-  --gray-800: 31 41 55;
-  --gray-900: 17 24 39;
-  --body-bg: #050810;
+  --gray-500: 120 128 145;
+  --gray-600: 95 107 122;
+  --gray-700: 62 74 90;
+  --gray-800: 38 50 65;
+  --gray-900: 22 30 45;
+  --body-bg: #090d16;
   --body-color: #e2e8f0;
-  --scrollbar-track: #0a0f1e;
-  --scrollbar-thumb: #374151;
-  --scrollbar-thumb-hover: #4b5563;
+  --scrollbar-track: #0e1426;
+  --scrollbar-thumb: #3a4a62;
+  --scrollbar-thumb-hover: #516080;
   --grid-rgb: 59 130 246;
 }
 
-/* Noche — índigo profundo + acento dorado */
+/* Noche — carbón neutro oscuro + dorado */
 .theme-night {
-  --ink-950: 15 5 39;
-  --ink-900: 22 8 56;
-  --ink-800: 33 13 82;
-  --ink-700: 48 22 110;
-  --ink-600: 67 35 140;
-  --azure-400: 251 191 36;
-  --azure-500: 245 158 11;
-  --azure-600: 217 119 6;
-  /* gray con tinte índigo/lavanda */
-  --gray-200: 220 214 254;
-  --gray-300: 196 181 253;
-  --gray-400: 167 139 250;
-  --gray-500: 124 108 200;
-  --gray-600: 74 56 150;
-  --gray-700: 45 30 90;
-  --gray-800: 30 16 64;
-  --gray-900: 19 8 45;
-  --body-bg: #0f0527;
-  --body-color: #ede9fe;
-  --scrollbar-track: #160838;
-  --scrollbar-thumb: #43238c;
-  --scrollbar-thumb-hover: #5530b0;
-  --grid-rgb: 251 191 36;
+  --ink-950: 15 15 17;
+  --ink-900: 26 26 31;
+  --ink-800: 37 37 48;
+  --ink-700: 48 48 64;
+  --ink-600: 64 64 85;
+  --azure-400: 255 184 0;
+  --azure-500: 230 162 0;
+  --azure-600: 198 138 0;
+  /* gray neutro cálido */
+  --gray-200: 245 244 239;
+  --gray-300: 220 218 210;
+  --gray-400: 180 178 168;
+  --gray-500: 140 138 128;
+  --gray-600: 105 103 95;
+  --gray-700: 70 68 62;
+  --gray-800: 46 45 42;
+  --gray-900: 28 28 25;
+  --body-bg: #0f0f11;
+  --body-color: #f5f4ef;
+  --scrollbar-track: #1a1a1f;
+  --scrollbar-thumb: #404055;
+  --scrollbar-thumb-hover: #58587a;
+  --grid-rgb: 255 184 0;
 }
 
-/* Día — cielo azul claro + texto marino oscuro */
+/* Light — slate neutro + acento azul (basado en mockup UX) */
 .theme-day {
-  --ink-950: 240 249 255;
-  --ink-900: 224 242 254;
-  --ink-800: 204 232 252;
-  --ink-700: 179 215 243;
-  --ink-600: 140 190 225;
-  --azure-400: 29 78 216;
-  --azure-500: 28 60 175;
-  --azure-600: 26 46 140;
-  /* gray invertido: números altos = claro (fondos), números bajos = oscuro (texto) */
-  --gray-200: 12 26 53;
-  --gray-300: 30 58 95;
-  --gray-400: 45 80 112;
-  --gray-500: 74 104 128;
-  --gray-600: 106 144 170;
-  --gray-700: 160 208 232;
-  --gray-800: 200 230 248;
-  --gray-900: 218 241 253;
-  --body-bg: #f0f9ff;
-  --body-color: #0c1a35;
-  --scrollbar-track: #e0f2fe;
-  --scrollbar-thumb: #7ab8d8;
-  --scrollbar-thumb-hover: #4a90b8;
-  --grid-rgb: 29 78 216;
+  /* ink = superficies (de base a elevada): off-white → surface → sutil → hover → borde */
+  --ink-950: 249 250 251;  /* #F9FAFB — fondo base página */
+  --ink-900: 255 255 255;  /* #FFFFFF — surface/cards */
+  --ink-800: 241 245 249;  /* #F1F5F9 — surface-2/zebra */
+  --ink-700: 226 232 240;  /* #E2E8F0 — borde sutil/hover */
+  --ink-600: 203 213 225;  /* #CBD5E1 — borde fuerte */
+  /* azure = accent. Más saturado en light que en dark. */
+  --azure-400: 37 99 235;  /* #2563EB — accent */
+  --azure-500: 29 78 216;  /* #1D4ED8 — accent-hover */
+  --azure-600: 30 64 175;  /* #1E40AF — accent-pressed */
+  /* gray invertido: bajos = texto oscuro, altos = fondos claros */
+  --gray-200: 15 23 42;    /* #0F172A — text-primary */
+  --gray-300: 71 85 105;   /* #475569 — text-secondary */
+  --gray-400: 100 116 139; /* #64748B — text-tertiary */
+  --gray-500: 148 163 184; /* #94A3B8 — text-muted */
+  --gray-600: 203 213 225; /* #CBD5E1 — borde fuerte */
+  --gray-700: 226 232 240; /* #E2E8F0 — borde sutil */
+  --gray-800: 241 245 249; /* #F1F5F9 — surface-2 */
+  --gray-900: 248 250 252; /* #F8FAFC — surface-lightest */
+  --body-bg: #F9FAFB;
+  --body-color: #0F172A;
+  --scrollbar-track: #F1F5F9;
+  --scrollbar-thumb: #CBD5E1;
+  --scrollbar-thumb-hover: #94A3B8;
+  --grid-rgb: 37 99 235;
 }
 
 /* ─── Base ────────────────────────────────────────────────────────────────── */
@@ -116,18 +118,73 @@ body {
 .theme-day input, .theme-day textarea { color: rgb(var(--gray-200)); }
 
 /* Accents azure en texto — usar variable directamente */
-.theme-day :is(.text-azure-400, .text-azure-300) {
+.theme-day :is(.text-azure-400, .text-azure-300, .text-azure-200, .text-azure-100) {
   color: rgb(var(--azure-400));
 }
 
-/* Borders con opacidad blanca → convertir a azul claro */
-.theme-day :is(.border-white\/10, .border-white\/15, .border-white\/20) {
-  border-color: rgb(var(--gray-700));
-}
+/* ── Texto blanco → marino oscuro ─────────────────────────────────────────── */
+/* text-white puro */
+.theme-day .text-white { color: rgb(var(--gray-200)); }
+/* text-white/XX (ej. text-white/70, text-white/50, text-white/40...) */
+.theme-day [class*="text-white/"] { color: rgb(var(--gray-300) / 0.9); }
 
-/* ─── Night theme — acento dorado en texto azure ─────────────────────────── */
+/* Grays claros que en dark son texto legible → convertir a oscuro */
+.theme-day .text-gray-200 { color: rgb(var(--gray-200)); }
+.theme-day .text-gray-300 { color: rgb(var(--gray-300)); }
+.theme-day .text-gray-400 { color: rgb(var(--gray-400)); }
+.theme-day .text-gray-500 { color: rgb(var(--gray-500)); }
+
+/* ── Fondos semitransparentes blancos → tinte azul muy suave ──────────────── */
+.theme-day [class*="bg-white/"] { background-color: rgb(var(--azure-500) / 0.07); }
+
+/* ── Bordes blancos semitransparentes → azul grisáceo ────────────────────── */
+.theme-day [class*="border-white/"] { border-color: rgb(var(--gray-700)); }
+
+/* ── Texto en botones/nav que usan text-white explícito ───────────────────── */
+.theme-day button.text-white,
+.theme-day a.text-white { color: rgb(var(--gray-200)); }
+
+/* ── Scrollbar claro ──────────────────────────────────────────────────────── */
+.theme-day ::-webkit-scrollbar-track { background: var(--scrollbar-track); }
+.theme-day ::-webkit-scrollbar-thumb { background: var(--scrollbar-thumb); }
+.theme-day ::-webkit-scrollbar-thumb:hover { background: var(--scrollbar-thumb-hover); }
+
+/* ─── Night theme — acento dorado en texto azure + pulse glow cálido ──────── */
 .theme-night :is(.text-azure-400, .text-azure-300, .text-azure-200) {
   color: rgb(var(--azure-400));
+}
+.theme-night .animate-pulse-glow {
+  box-shadow: 0 0 12px rgb(var(--azure-500) / 0.45);
+}
+
+/* ─── Header: bloqueado en modo oscuro en TODOS los temas ─────────────────── */
+/* El header (y sus dropdowns internos) conservan la estética dark original    */
+/* sin importar si el tema activo es dark, night o light. Se logra             */
+/* reescalando las CSS variables dentro del ámbito del <header>, lo cual       */
+/* propaga a todos los descendientes — incluyendo el selector de BD y sus      */
+/* menús flotantes — y neutraliza los overrides de `.theme-day` automáticamente*/
+/* porque todos esos overrides referencian estas mismas variables.             */
+.theme-day header,
+.theme-night header {
+  /* ink = superficies oscuras (carbón suave + azul marino) */
+  --ink-950: 9 13 22;
+  --ink-900: 14 20 38;
+  --ink-800: 22 30 50;
+  --ink-700: 34 45 65;
+  --ink-600: 58 70 90;
+  /* azure = acento azul original (brillante sobre fondo oscuro) */
+  --azure-400: 96 165 250;
+  --azure-500: 59 130 246;
+  --azure-600: 37 99 235;
+  /* gray = escala dark: gray-200 = casi blanco · gray-900 = casi negro */
+  --gray-200: 229 231 235;
+  --gray-300: 209 213 219;
+  --gray-400: 156 163 175;
+  --gray-500: 120 128 145;
+  --gray-600: 95 107 122;
+  --gray-700: 62 74 90;
+  --gray-800: 38 50 65;
+  --gray-900: 22 30 45;
 }
 
 /* ─── Animations ──────────────────────────────────────────────────────────── */

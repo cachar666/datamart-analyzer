@@ -71,7 +71,7 @@ Las claves surrogate (SkId*) relacionan hechos con dimensiones. Ejemplo: `SkIdAc
 La tabla `[ADP_DTM_DIM].[ControlClaseOrigen]` clasifica cada movimiento de `[ADP_DTM_FACT].[ControlProyecto]`.
 **SIEMPRE filtrar por `[Clase]` para la clasificación principal. `[Origen]` es el subtipo dentro de cada Clase — úsalo solo para discriminar el tipo de documento cuando ya tienes la Clase.**
 
-#### Valores de `[Clase]` (clasificación principal):
+### Valores de `[Clase]` — Presupuestado, Proyectado, Consumido, Asegurado, Ejecutado, Invertido
 
 | Clase | Descripción |
 |-------|-------------|
@@ -84,7 +84,7 @@ La tabla `[ADP_DTM_DIM].[ControlClaseOrigen]` clasifica cada movimiento de `[ADP
 | `'J'` | Ejecutado — avance físico registrado |
 | `'I'` | Invertido — pagos efectivamente realizados |
 
-#### Mapeo completo `[Clase]` + `[Origen]` → Tipo de documento:
+### Mapeo `[Clase]` + `[Origen]` → Tipo de documento (salidas, actas, contratos, órdenes de compra, entradas)
 
 | Clase | Origen | Tipo de documento |
 |-------|--------|-------------------|
@@ -133,6 +133,8 @@ La tabla `[ADP_DTM_DIM].[ControlClaseOrigen]` clasifica cada movimiento de `[ADP
 | `'I'` | `SC` | SALDO DE ANTICIPOS CONTRATOS |
 | `'I'` | `AJ` | AJUSTES DE INVENTARIO |
 
+### Patrones SQL — Presupuestado vs Consumido y etiquetado de tipo de documento
+
 **Patrón correcto para Presupuestado vs Consumido:**
 ```sql
 SUM(CASE WHEN co.[Clase] = 'P' THEN cp.[Valor Total] ELSE 0 END) AS ValorPresupuestado,
@@ -160,7 +162,7 @@ END AS TipoDocumento
 
 **PROHIBIDO**: usar `co.[Origen] = 'P'` — ese valor no existe en `[Origen]`. La `'P'` solo existe en `[Clase]`.
 
-#### Inventario en obra
+### Inventario en obra — material recibido no consumido
 
 El **inventario disponible** no es una Clase directa — solo se consideran los movimientos físicos de material, no todos los orígenes de Invertido ni de Consumido:
 
@@ -211,6 +213,33 @@ La columna `[ADP_DTM_DIM].[Proyecto].[Estado]` tiene únicamente estos cuatro va
 
 Muchos campos tienen espacios en el nombre. Usar siempre corchetes:
 - `[Nombre Proyecto]`, `[Capitulo Descripcion]`, `[Insumo Descripcion]`, `[Tipo Descripcion]`, `[Salida Valor Total]`, `[Total Entrada]`, `[Valor Total Acta]`
+
+### EntradasAlmacen — llave de fecha SkIdFechaEntrada
+
+En `[ADP_DTM_FACT].[EntradasAlmacen]` la llave de fecha es **`SkIdFechaEntrada`**, no `SkIdFecha`.
+
+```sql
+-- JOIN correcto con la dimensión Fecha
+ON ea.SkIdFechaEntrada = f.SkIdFecha
+```
+
+**PROHIBIDO**: usar `ea.SkIdFecha` — esa columna no existe en `EntradasAlmacen`.
+
+### Dimensión Insumo — Tipo y Agrupacion (nombres exactos de columna)
+
+En `[ADP_DTM_DIM].[Insumo]` la clasificación se expresa con dos pares de columnas:
+
+| Concepto | Código | Descripción |
+|---|---|---|
+| Tipo de insumo | `[Tipo]` | `[Tipo Descripcion]` |
+| Agrupación / categoría | `[Agrupacion]` | `[Agrupacion Descripcion]` |
+
+**PROHIBIDO**: inventar nombres como `[TipoInsumo]`, `[CategoriaInsumo]`, `[GrupoInsumo]`. Usar siempre los cuatro nombres exactos de la tabla.
+
+```sql
+-- JOIN desde SalidasAlmacen
+ON sa.SkIdInsumo = i.SkIdInsumo AND sa.SkIdEmpresa = i.SkIdEmpresa
+```
 
 ---
 

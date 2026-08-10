@@ -220,7 +220,16 @@ public class AnalyzeController : ControllerBase
             List<Dictionary<string, object?>>? datos = null;
             if (!string.IsNullOrWhiteSpace(aiResponse.SqlGenerado))
             {
-                var queryResult = await _sql.EjecutarQueryAsync(request.Database, aiResponse.SqlGenerado);
+                // Verificación post-hoc: si el filtro insumo está activo y la IA
+                // no lo aplicó, lo inyectamos ahora (solo si la SQL hace JOIN a
+                // Insumo; si no, se ignora igual que con los prebuilt).
+                var sqlFinal = InjectarFiltrosPrebuilt(aiResponse.SqlGenerado, request.ContextoVariables);
+                if (!ReferenceEquals(sqlFinal, aiResponse.SqlGenerado) && sqlFinal != aiResponse.SqlGenerado)
+                {
+                    _logger.LogInformation("Filtro insumo inyectado post-hoc sobre SQL de IA");
+                    aiResponse = aiResponse with { SqlGenerado = sqlFinal };
+                }
+                var queryResult = await _sql.EjecutarQueryAsync(request.Database, sqlFinal);
 
                 if (!queryResult.Exitoso && EsErrorDeColumna(queryResult.Error))
                 {
@@ -228,7 +237,7 @@ public class AnalyzeController : ControllerBase
                     try
                     {
                         UsageInfo? retryUsage;
-                        (aiResponse, retryUsage) = await _ai.CorregirSqlAsync(enrichedRequest, aiResponse.SqlGenerado, queryResult.Error!);
+                        (aiResponse, retryUsage) = await _ai.CorregirSqlAsync(enrichedRequest, sqlFinal, queryResult.Error!);
                         if (retryUsage is not null)
                             usageInfo = usageInfo is null ? retryUsage : usageInfo with
                             {
@@ -319,8 +328,16 @@ public class AnalyzeController : ControllerBase
     }
 
     /// <summary>
-    /// Inyecta filtros de contexto (proyecto, macroproyecto, empresa) en el SQL pre-construido
-    /// sin usar IA. Los prebuilt siempre hacen JOIN a [ADP_DTM_DIM].[Proyecto] con alias "p".
+    /// Inyecta filtros de contexto en el SQL (prebuilt o generado por IA).
+    ///
+    /// Filtros sobre Proyecto (empresa, macroproyecto, proyecto, estado):
+    ///   Asumen JOIN a [ADP_DTM_DIM].[Proyecto] con alias "p" y usan IN (...).
+    ///
+    /// Filtro insumo (texto libre):
+    ///   Se aplica como LIKE '%texto%' ESCAPE '\' sobre [Insumo Descripcion],
+    ///   solo si la SQL ya hace JOIN a [ADP_DTM_DIM].[Insumo]. Si la dimensión
+    ///   Insumo no está presente, el filtro se ignora silenciosamente (decisión
+    ///   UX: otras consultas siguen funcionando con el filtro activo).
     /// </summary>
     private static string InjectarFiltrosPrebuilt(string sql, Dictionary<string, List<string>>? filtros)
     {
@@ -339,6 +356,28 @@ public class AnalyzeController : ControllerBase
         foreach (var (tipo, valores) in filtros)
         {
             if (valores is null || valores.Count == 0) continue;
+
+            // ── Filtro especial: insumo (texto, LIKE) ─────────────────────────
+            if (string.Equals(tipo, "insumo", StringComparison.OrdinalIgnoreCase))
+            {
+                // Solo aplicar si la SQL hace JOIN a la dimensión Insumo.
+                // Si la query no la usa (ej. listar proyectos), el filtro se ignora.
+                if (!SqlUsaDimensionInsumo(sql)) continue;
+                var aliasInsumo = DetectarAliasInsumo(sql); // "i" por convención
+
+                foreach (var texto in valores)
+                {
+                    if (string.IsNullOrWhiteSpace(texto)) continue;
+                    // Evitar duplicar si Claude ya incluyó la condición
+                    if (sql.IndexOf("[Insumo Descripcion] LIKE", StringComparison.OrdinalIgnoreCase) >= 0)
+                        continue;
+                    var escaped = EscaparParaLike(texto.Trim());
+                    condiciones.Add($"{aliasInsumo}.[Insumo Descripcion] LIKE '%{escaped}%' ESCAPE '\\'");
+                }
+                continue;
+            }
+
+            // ── Filtros estándar sobre Proyecto (IN) ──────────────────────────
             if (!mapColumna.TryGetValue(tipo, out var col)) continue;
             var lista = string.Join(", ", valores.Select(v => $"'{v.Replace("'", "''")}'"));
             condiciones.Add($"p.[{col}] IN ({lista})");
@@ -390,6 +429,44 @@ public class AnalyzeController : ControllerBase
             error.Contains("Invalid column") ||
             error.Contains("no es válido")
         );
+
+    // ── Helpers para filtro insumo (texto / LIKE) ─────────────────────────────
+
+    /// <summary>
+    /// ¿La SQL hace referencia a la dimensión Insumo? Cubre notaciones con o
+    /// sin corchetes y tolera espacios variables.
+    /// </summary>
+    private static bool SqlUsaDimensionInsumo(string sql)
+        => System.Text.RegularExpressions.Regex.IsMatch(
+            sql,
+            @"\[?ADP_DTM_DIM\]?\.\[?Insumo\]?\b",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    /// <summary>
+    /// Detecta el alias que la query asigna a la tabla Insumo.
+    /// Convención del proyecto: "i". Si no se puede determinar, se usa "i".
+    /// </summary>
+    private static string DetectarAliasInsumo(string sql)
+    {
+        var match = System.Text.RegularExpressions.Regex.Match(
+            sql,
+            @"\[?ADP_DTM_DIM\]?\.\[?Insumo\]?\s+(?:AS\s+)?(\w+)",
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        return match.Success ? match.Groups[1].Value : "i";
+    }
+
+    /// <summary>
+    /// Escapa una cadena para usar dentro de un patrón LIKE con ESCAPE '\':
+    ///   - \ → \\ (debe ir primero para no doble-escapar)
+    ///   - % → \%
+    ///   - _ → \_
+    ///   - ' → '' (escape SQL estándar para string literal)
+    /// </summary>
+    private static string EscaparParaLike(string s)
+        => s.Replace(@"\", @"\\")
+            .Replace("%", @"\%")
+            .Replace("_", @"\_")
+            .Replace("'", "''");
 }
 
 // ─── Filters Controller ───────────────────────────────────────────────────────
@@ -564,6 +641,7 @@ public class FiltersController : ControllerBase
             var valores = result.Datos?
                 .Select(row => row.TryGetValue(displayCol.NombreCampo, out var v) ? v?.ToString() : null)
                 .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Select(v => v!)
                 .ToList() ?? new List<string>();
 
             return Ok(new

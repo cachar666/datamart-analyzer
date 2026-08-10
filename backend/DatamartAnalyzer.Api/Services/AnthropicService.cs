@@ -146,20 +146,13 @@ public class AnthropicService : IAnthropicService
             6. Si la pregunta requiere datos que no están en el schema disponible, explícalo en ExplicacionTexto y omite SqlGenerado.
             7. Antes de generar el SQL, verifica mentalmente que cada columna usada existe en el schema de su tabla.
 
-            REGLA CRÍTICA — ControlClaseOrigen:
-            Filtrar SIEMPRE por co.[Clase], nunca por co.[Origen] para la clasificación principal. [Origen] es el subtipo del documento dentro de cada Clase.
-            [Clase]: 'P'=Presupuestado | 'Y'=Proyectado | 'L'=Actas Cliente | 'C'=Consumido | 'T'=Asegurado contratos | 'B'=Asegurado compras | 'J'=Ejecutado | 'I'=Invertido
-            [Clase]+[Origen] para tipo de documento exacto:
-              C+S=Salida Almacén | C+G=Actas Generales | C+R=Actas Por Grupo | C+T=Actas Todo Costo | C+D=Reintegro Salida | C+M=Descuentos Menor Valor | C+C=Cuentas Control | C+E=Equipos
-              T+G=Contratos Generales | T+R=Contratos Por Grupos | T+T=Contratos Todo Costo | T+N=Nómina Contratado | T+C=Cuentas Control | T+D=Descuentos Menor Valor
-              B+C=Órdenes de Compra | B+TE=Entradas Traslado | B+TS=Salidas Traslado | B+EX=Salidas Transformación | B+SX=Entradas Transformación
-              J+E=Actas de Avance
-              I+E=Entradas Almacén | I+NP=Entradas No Asignadas | I+N=Control Nómina | I+EQ=Equipos | I+G=Actas Generales | I+R=Actas Por Grupo | I+T=Actas Todo Costo | I+K=Cuentas Control | I+V=Notas Valor | I+VN=Notas Valor Sin Asignación | I+X=Devoluciones Proveedor | I+ED=Devoluciones Proveedor | I+TE=Entradas Traslado | I+TS=Salidas Traslado | I+EX=Entradas Transformación | I+SX=Salidas Transformación | I+AD=Descuentos Contables | I+SO=Saldo Anticipos OC | I+SC=Saldo Anticipos Contratos | I+AJ=Ajustes Inventario
-            NUNCA usar co.[Origen]='P' — ese valor no existe en [Origen], solo en [Clase].
-            INVENTARIO (solo movimientos físicos) = SUM(CASE WHEN co.[Clase]='I' AND co.[Origen] IN ('E','NP','ED','V','VN','X','TE','TS','EX','SX','AJ') THEN cp.[Valor Total] ELSE 0 END) - SUM(CASE WHEN co.[Clase]='C' AND co.[Origen] IN ('S','D') THEN cp.[Valor Total] ELSE 0 END). No existe Clase='Inventario'. No usar todos los orígenes de I ni de C — solo los listados.
-            Valor monetario: [Valor Total], no [Valor Sin IVA].
-            Estados válidos de proyecto (únicos 4): 'Presupuesto' | 'En ejecucion' | 'Inactivo' | 'Finalizado'. Proyectos activos/en curso → [Estado]='En ejecucion'. PROHIBIDO: 'Activo', 'Terminado', 'En planeacion'.
-            JOINs SIEMPRE con SkIdEmpresa: ON cp.SkIdProyecto=p.SkIdProyecto AND cp.SkIdEmpresa=p.SkIdEmpresa
+            CONOCIMIENTO DE DOMINIO:
+            Las reglas de negocio y de SQL del datamart (ControlClaseOrigen y sus valores de [Clase]/[Origen],
+            fórmula de inventario, columna de valor, estados válidos de proyecto, llaves de JOIN, nombres de
+            columnas de la dimensión Insumo, etc.) viven en el bloque CONTEXTO ERP ADPRO que sigue más abajo.
+            Ese bloque es la ÚNICA fuente de verdad: trátalo como parte de estas reglas y respétalo al pie
+            de la letra. No lo contradigas ni completes con supuestos propios.
+            (Fuente: docs/contexto-erp.md — no duplicar estas reglas aquí para evitar que se desincronicen.)
 
             FORMATO JSON:
             {"TipoRespuesta":"Tabla|Grafico|Texto|TablaMasGrafico|TablaMasTexto","ExplicacionTexto":"(español)","SqlGenerado":"SELECT...","Grafico":{"Tipo":"Barras|Lineas|Torta|Area","CampoEjeX":"col","CampoEjeY":"col","CampoAgrupacion":null,"Titulo":"título","ColorPrimario":"#3b82f6"}}
@@ -278,6 +271,21 @@ public class AnthropicService : IAnthropicService
                 sb.AppendLine("Aplica SIEMPRE estos filtros en el WHERE de tu SQL a menos que el usuario pida explícitamente otro valor:");
                 foreach (var kv in activos)
                 {
+                    // Filtro especial: insumo (texto libre, match por LIKE)
+                    if (string.Equals(kv.Key, "insumo", StringComparison.OrdinalIgnoreCase))
+                    {
+                        foreach (var texto in kv.Value)
+                        {
+                            if (string.IsNullOrWhiteSpace(texto)) continue;
+                            var escaped = texto.Replace("'", "''");
+                            sb.AppendLine(
+                                $"- insumo → [ADP_DTM_DIM].[Insumo].[Insumo Descripcion] LIKE '%{escaped}%' " +
+                                "(aplica solo si la consulta involucra la dimensión Insumo; si no, IGNORA este filtro " +
+                                "— otras dimensiones no se ven afectadas por él)");
+                        }
+                        continue;
+                    }
+
                     var vals = string.Join(", ", kv.Value.Select(v => $"'{v}'"));
                     if (request.FilterMeta != null && request.FilterMeta.TryGetValue(kv.Key, out var meta))
                         sb.AppendLine($"- {kv.Key} → {meta.Tabla}.[{meta.Columna}] IN ({vals})");

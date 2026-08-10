@@ -95,14 +95,17 @@ public class DocumentService : IDocumentService
         if (introTexto.Length <= maxChars)
             sb.Append(introTexto);
 
-        // Agregar secciones relevantes hasta el límite
+        // Agregar secciones relevantes hasta el límite.
+        // Nota: una sección que no quepa se SALTA (continue), no aborta el bucle —
+        // las secciones siguientes son más pequeñas y suelen caber. Con break, una
+        // sección grande de score alto bloqueaba toda la recuperación posterior.
         foreach (var (_, seccion, score) in puntuadas)
         {
             if (score == 0) break;
             if (seccion == intro) continue;   // ya incluida
 
             var texto = FormatSeccion(seccion);
-            if (sb.Length + texto.Length > maxChars) break;
+            if (sb.Length + texto.Length > maxChars) continue;
             sb.Append(texto);
         }
 
