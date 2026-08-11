@@ -1,11 +1,11 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+﻿import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   Database, Send, Loader2, ChevronDown, BarChart2,
   Table, FileText, AlertCircle, CheckCircle2, Zap,
   RefreshCw, Eye, EyeOff, Code, Server, Layers, Lightbulb,
   Bookmark, BookMarked, Clock, Trash2, PlayCircle, Search,
   Star, LayoutDashboard, MessageSquare, GripVertical, X,
-  SlidersHorizontal, Filter, Sun, Moon, SunMoon
+  SlidersHorizontal, Filter, Sun, Moon, SunMoon, Lock
 } from 'lucide-react'
 
 // ─── Temas ────────────────────────────────────────────────────────────────────
@@ -47,18 +47,16 @@ const AI_MODELS = [
   { id: 'claude-sonnet-4-6',         label: 'Sonnet 4.6', desc: 'Más capaz · Mayor costo' },
 ]
 
-// ─── Saved Queries (localStorage) ────────────────────────────────────────────
-const STORAGE_KEY = 'datamart_saved_queries'
-const loadSavedQueries = () => { try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]') } catch { return [] } }
-const persistSavedQueries = (qs) => localStorage.setItem(STORAGE_KEY, JSON.stringify(qs))
-
-// ─── Dashboards (localStorage) ───────────────────────────────────────────────
-// Estructura: [{ id, nombre, paneles: [{ id, titulo, sql, tipoRespuesta, grafico }] }]
-const DASHBOARDS_KEY = 'datamart_dashboards'
-const newDashId = () => `dash_${Date.now()}_${Math.random().toString(36).slice(2,5)}`
-const newPanelId = () => `pan_${Date.now()}_${Math.random().toString(36).slice(2,5)}`
-const loadDashboards = () => { try { return JSON.parse(localStorage.getItem(DASHBOARDS_KEY) || '[]') } catch { return [] } }
-const persistDashboards = (ds) => localStorage.setItem(DASHBOARDS_KEY, JSON.stringify(ds))
+// ─── Consultas guardadas y dashboards ───────────────────────────────────────
+// Ya NO viven en localStorage: se persisten en el esquema ADP_DTM_APP DENTRO del
+// datamart, via la API. Eso es lo que permite que el conector MCP y esta app
+// compartan lo mismo, y que cada datamart lleve consigo sus consultas.
+//
+// Formas que devuelve la API:
+//   consulta → { id, database, pregunta, sql, tipoRespuesta, grafico, tags, createdAt }
+//   dashboard → { id, nombre, database, descripcion, paneles: [...] }
+//   panel    → { id, dashboardId, titulo, sql, sqlBase, esPrebuilt, prebuiltKey,
+//                filtrosFijos, aceptaFiltrosGlobales, tipoRespuesta, grafico, orden }
 
 // ─── SINCO Logo SVG ───────────────────────────────────────────────────────────
 function SincoLogo({ size = 26 }) {
@@ -202,8 +200,42 @@ function SuggestionCard({ s, color, uso, selectedDb, filtrosActivos = [], onSele
 // ─── Chart Renderer ───────────────────────────────────────────────────────────
 function ChartDisplay({ datos, grafico }) {
   if (!datos?.length || !grafico) return null
-  const { tipo, campoEjeX, campoEjeY, titulo, colorPrimario } = grafico
+  const { tipo, campoEjeX: pedidoX, campoEjeY: pedidoY, titulo, colorPrimario } = grafico
   const color = colorPrimario || '#3b82f6'
+
+  // Los ejes se resuelven contra las columnas REALES del resultado, sin distinguir
+  // mayúsculas: 'valoradjudicado' y 'ValorAdjudicado' son la misma columna para SQL
+  // Server, y no tiene sentido que acá sean dos cosas distintas.
+  const columnas = Object.keys(datos[0] ?? {})
+  const resolver = (c) => columnas.find(k => k.toLowerCase() === String(c ?? '').toLowerCase())
+  const campoEjeX = resolver(pedidoX)
+  const campoEjeY = resolver(pedidoY)
+
+  // Un gráfico que nombra columnas que no existen dibujaba unos ejes vacíos y no
+  // había forma de saber por qué. Decir cuál falta cuesta lo mismo y es accionable.
+  if (!campoEjeX || !campoEjeY) {
+    const faltantes = [
+      !campoEjeX && `«${pedidoX || 'sin definir'}» (eje X)`,
+      !campoEjeY && `«${pedidoY || 'sin definir'}» (eje Y)`,
+    ].filter(Boolean)
+
+    return (
+      <div className="mt-4">
+        {titulo && <p className="text-xs font-mono text-gray-400 mb-2 uppercase tracking-wider">{titulo}</p>}
+        <div className="bg-ink-800 rounded-xl p-4 text-sm">
+          <p className="text-gray-300 mb-1">No se puede dibujar este gráfico.</p>
+          <p className="text-gray-400">
+            {faltantes.length === 1 ? 'La columna ' : 'Las columnas '}
+            <span className="text-amber-400 font-mono">{faltantes.join(' y ')}</span>
+            {faltantes.length === 1 ? ' no está' : ' no están'} en el resultado.
+          </p>
+          <p className="mt-2 text-xs text-gray-500">
+            Columnas disponibles: <span className="font-mono text-gray-400">{columnas.join(', ')}</span>
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   const chartData = datos.map(row => ({
     ...row,
@@ -769,7 +801,9 @@ function DashboardPanel({ fav, database, appliedFilters, onToggleGlobal, onRemov
 // ─── Dashboard View ───────────────────────────────────────────────────────────
 const EMPTY_DASH_FILTERS = { empresa: [], proyecto: [], macroproyecto: [], estado: [], insumo: [] }
 
-function Dashboard({ dashboards, setDashboards, database, onGoConsulta }) {
+// Las mutaciones van contra la API y despues piden recarga con onCambio().
+// No hay estado local que conciliar: la BD es la unica fuente.
+function Dashboard({ dashboards, database, onCambio, onGoConsulta }) {
   const [activeDashId, setActiveDashId] = useState(() => dashboards[0]?.id ?? null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [dragIdx, setDragIdx] = useState(null)
@@ -798,53 +832,67 @@ function Dashboard({ dashboards, setDashboards, database, onGoConsulta }) {
   const activeDash = dashboards.find(d => d.id === activeDashId) ?? dashboards[0] ?? null
   const paneles = activeDash?.paneles ?? []
 
-  const updateDashboards = (next) => { setDashboards(next); persistDashboards(next) }
+  const base = database?.nombre
+  const [guardando, setGuardando] = useState(false)
 
-  const handleRemovePanel = (panelId) => {
-    const next = dashboards.map(d => d.id === activeDash.id ? { ...d, paneles: d.paneles.filter(p => p.id !== panelId) } : d)
-    updateDashboards(next)
+  // Toda mutacion pasa por aca: llama a la API y recarga desde la BD.
+  const mutar = async (accion) => {
+    if (!base) return
+    setGuardando(true)
+    try {
+      await accion()
+      await onCambio?.()
+    } catch (e) {
+      console.error('Error guardando el dashboard:', e?.response?.data?.error ?? e.message)
+    } finally {
+      setGuardando(false)
+    }
   }
+
+  const handleRemovePanel = (panelId) =>
+    mutar(() => datamartApi.dashboards.quitarPanel(base, activeDash.id, panelId))
 
   const handleDrop = (targetIdx) => {
     if (dragIdx === null || dragIdx === targetIdx) return
     const newPaneles = [...paneles]
     const [moved] = newPaneles.splice(dragIdx, 1)
     newPaneles.splice(targetIdx, 0, moved)
-    const next = dashboards.map(d => d.id === activeDash.id ? { ...d, paneles: newPaneles } : d)
-    updateDashboards(next)
     setDragIdx(null); setDragOverIdx(null)
+    // El backend exige la lista COMPLETA de paneles: asi no quedan ordenes
+    // duplicados ni huecos.
+    mutar(() => datamartApi.dashboards.reordenarPaneles(base, activeDash.id, newPaneles.map(p => p.id)))
   }
 
   const handleDeleteDashboard = (id) => {
-    const next = dashboards.filter(d => d.id !== id)
-    updateDashboards(next)
-    if (activeDashId === id) setActiveDashId(next[0]?.id ?? null)
+    if (activeDashId === id) setActiveDashId(dashboards.find(d => d.id !== id)?.id ?? null)
     setDropdownOpen(false)
+    mutar(() => datamartApi.dashboards.borrar(base, id))
   }
 
   const handleStartRename = (d) => { setRenamingId(d.id); setRenameVal(d.nombre); setDropdownOpen(false) }
   const handleRename = () => {
     if (!renameVal.trim()) return
-    updateDashboards(dashboards.map(d => d.id === renamingId ? { ...d, nombre: renameVal.trim() } : d))
+    const id = renamingId
+    const nombre = renameVal.trim()
     setRenamingId(null)
+    mutar(() => datamartApi.dashboards.actualizar(base, id, { nombre }))
   }
 
-  const handleNewDashboard = () => {
-    const nombre = `Dashboard ${dashboards.length + 1}`
-    const id = newDashId()
-    const next = [...dashboards, { id, nombre, paneles: [] }]
-    updateDashboards(next)
-    setActiveDashId(id)
-    setDropdownOpen(false)
-  }
+  const handleNewDashboard = () =>
+    mutar(async () => {
+      const creado = await datamartApi.dashboards.crear(base, { nombre: `Dashboard ${dashboards.length + 1}` })
+      setActiveDashId(creado.id)
+      setDropdownOpen(false)
+    })
 
-  const totalPaneles = dashboards.reduce((s, d) => s + d.paneles.length, 0)
+  const totalPaneles = dashboards.reduce((s, d) => s + (d.paneles?.length ?? 0), 0)
 
   const handleToggleGlobal = (panelId) => {
-    const next = dashboards.map(d => d.id === activeDash?.id
-      ? { ...d, paneles: d.paneles.map(p => p.id === panelId ? { ...p, aceptaFiltrosGlobales: p.aceptaFiltrosGlobales === false } : p) }
-      : d)
-    updateDashboards(next)
+    const panel = paneles.find(p => p.id === panelId)
+    if (!panel) return
+    mutar(() => datamartApi.dashboards.actualizarPanel(base, activeDash.id, panelId, {
+      aceptaFiltrosGlobales: panel.aceptaFiltrosGlobales === false,
+    }))
   }
 
   const handleDashFilterChange = (tipo, values) => setPendingFilters(prev => {
@@ -1538,19 +1586,26 @@ export default function App() {
   const [suggestionSearch, setSuggestionSearch] = useState('')
   const [suggestionCategory, setSuggestionCategory] = useState('todas')
   const [suggestionSort, setSuggestionSort] = useState('default') // 'default' | 'uso' | 'az'
-  const [suggestionUsage, setSuggestionUsage] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('suggestion_usage') || '{}') } catch { return {} }
-  })
+  // El catalogo ya no vive hardcodeado acá ni el contador en localStorage: sale del
+  // datamart, igual que consultas y dashboards. Así la app web y el conector de
+  // Claude muestran lo mismo, y el Top refleja lo que usa el equipo y no lo que
+  // usó este navegador.
+  const [sugeridas, setSugeridas] = useState([])
+  const [cargandoSugeridas, setCargandoSugeridas] = useState(false)
   const [dbSearch, setDbSearch] = useState('')
   const [selectedModel, setSelectedModel] = useState('claude-haiku-4-5-20251001')
   const [modelOpen, setModelOpen] = useState(false)
-  const [savedQueries, setSavedQueries] = useState(() => loadSavedQueries())
+  const [savedQueries, setSavedQueries] = useState([])
   const [showHistory, setShowHistory] = useState(false)
   const [sqlMode, setSqlMode] = useState(false)
   const [sessionUsage, setSessionUsage] = useState({ costoUsd: 0, tokensIn: 0, tokensOut: 0, requests: 0 })
   const [vistaActiva, setVistaActiva] = useState('consulta')
-  const [dashboards, setDashboards] = useState(() => loadDashboards())
+  const [dashboards, setDashboards] = useState([])
+  const [cargandoAlmacen, setCargandoAlmacen] = useState(false)
+  const [errorAlmacen, setErrorAlmacen] = useState(null)
   const [favModal, setFavModal] = useState(null) // { titulo, sql, tipoRespuesta, grafico }
+  // null = todavia no se resolvio. { modo: 'erp'|'standalone', datamarts: [], ... }
+  const [erpContext, setErpContext] = useState(null)
   const [contextVars, setContextVars] = useState({ empresa: [], proyecto: [], macroproyecto: [], estado: [], insumo: [] })
   const [filterMeta, setFilterMeta] = useState({})
   const filterMetaRef = useRef({})
@@ -1627,6 +1682,101 @@ export default function App() {
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Contexto ERP: si la app se abrio desde un ERP, el datamart lo dicta
+  // dbo.ADPConfig y no se elige a mano. En standalone no cambia nada.
+  useEffect(() => {
+    let cancelado = false
+
+    const resolverErp = async () => {
+      try {
+        const ctx = await datamartApi.erp.getDatamarts()
+        if (cancelado) return
+        setErpContext(ctx)
+
+        if (ctx.modo === 'erp' && ctx.datamarts?.length === 1) {
+          handleSelectDb({ nombre: ctx.datamarts[0], esDatamart: true })
+        }
+      } catch {
+        // Sin endpoint o backend caido: se comporta como standalone.
+        if (!cancelado) setErpContext({ modo: 'standalone', datamarts: [] })
+      }
+    }
+
+    resolverErp()
+    return () => { cancelado = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const modoErp = erpContext?.modo === 'erp'
+
+  // Trae consultas y dashboards del datamart activo. La lista de dashboards no
+  // incluye los paneles (para no cargar SQL de mas al listar), asi que se piden
+  // los detalles en paralelo.
+  const recargarAlmacen = useCallback(async (base) => {
+    if (!base) { setSavedQueries([]); setDashboards([]); setErrorAlmacen(null); return }
+
+    setCargandoAlmacen(true)
+    try {
+      const [consultas, lista] = await Promise.all([
+        datamartApi.consultas.listar(base),
+        datamartApi.dashboards.listar(base),
+      ])
+
+      const detalles = await Promise.all(
+        lista.map(d => datamartApi.dashboards.obtener(base, d.id).catch(() => ({ ...d, paneles: [] })))
+      )
+
+      setSavedQueries(consultas)
+      setDashboards(detalles)
+      setErrorAlmacen(null)
+    } catch (e) {
+      // 503 = el almacen no esta instalado en ese datamart. El backend devuelve
+      // el comando exacto para instalarlo en `solucion`.
+      const d = e?.response?.data
+      setSavedQueries([])
+      setDashboards([])
+      setErrorAlmacen(d?.error ? `${d.error}${d.solucion ? ` — ${d.solucion}` : ''}` : (e.message ?? 'Error desconocido'))
+    } finally {
+      setCargandoAlmacen(false)
+    }
+  }, [])
+
+  /// Catálogo de preguntas sugeridas del datamart. Va acá arriba y no junto a
+  /// handleSuggestion porque el efecto de abajo la referencia: definida más
+  /// abajo, la lista de dependencias la leería en zona muerta temporal.
+  const recargarSugeridas = useCallback(async (base) => {
+    if (!base) { setSugeridas([]); return }
+    setCargandoSugeridas(true)
+    try {
+      setSugeridas(await datamartApi.sugeridas.listar(base))
+    } catch (e) {
+      // Un almacén sin instalar no debe romper la pantalla: se muestra vacía.
+      console.warn('No se pudieron cargar las preguntas sugeridas:', e?.message)
+      setSugeridas([])
+    } finally {
+      setCargandoSugeridas(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    recargarAlmacen(selectedDb?.nombre)
+    recargarSugeridas(selectedDb?.nombre)
+  }, [selectedDb, recargarAlmacen, recargarSugeridas])
+
+  // Limpieza de la epoca en que esto vivia en el navegador. Las consultas y los
+  // dashboards ahora tienen un unico origen: la BD de cada datamart. Dejar las
+  // claves viejas solo invita a que alguien las lea por error.
+  useEffect(() => {
+    try {
+      localStorage.removeItem('datamart_saved_queries')
+      localStorage.removeItem('datamart_dashboards')
+      // El contador de preguntas sugeridas fue el ultimo estado que quedo en el
+      // navegador: cada persona veia SUS numeros y se perdian al limpiar el cache.
+      // Ahora se registra en [ADP_DTM_APP].SuggestedQuestionUsage.
+      localStorage.removeItem('suggestion_usage')
+    } catch { /* sin localStorage */ }
+  }, [])
 
   const handleSelectDb = async (db) => {
     setSelectedDb(db)
@@ -1778,47 +1928,56 @@ export default function App() {
     }
   }
 
-  const handleSaveQuery = useCallback((pregunta, sqlGenerado, tipoRespuesta, grafico) => {
+  const handleSaveQuery = useCallback(async (pregunta, sqlGenerado, tipoRespuesta, grafico) => {
     const entry = {
-      id: Date.now(),
       pregunta,
       sql: sqlGenerado,
       tipoRespuesta,
       grafico: grafico || null,
-      fecha: new Date().toISOString()
     }
-    setSavedQueries(prev => {
-      const next = [entry, ...prev]
-      persistSavedQueries(next)
-      return next
-    })
-  }, [])
 
-  const handleAddFavorite = useCallback(({ panelTitulo, dashId, nuevoDashNombre, sql, tipoRespuesta, grafico, esPrebuilt, prebuiltKey, filtrosActivos }) => {
-    const panel = {
-      id: newPanelId(), titulo: panelTitulo,
-      sql, sqlBase: sql,
-      esPrebuilt: !!esPrebuilt,
-      prebuiltKey: prebuiltKey ?? null,
-      filtrosFijos: filtrosActivos ?? {},
-      aceptaFiltrosGlobales: true,
-      tipoRespuesta, grafico: grafico ?? null,
+    const base = selectedDbRef.current?.nombre
+    if (!base) return
+
+    try {
+      await datamartApi.consultas.crear(base, {
+        pregunta: entry.pregunta,
+        sql: entry.sql,
+        tipoRespuesta: entry.tipoRespuesta ?? 'Tabla',
+        grafico: entry.grafico,
+      })
+      await recargarAlmacen(base)
+    } catch (e) {
+      setErrorAlmacen(e?.response?.data?.error ?? 'No se pudo guardar la consulta.')
     }
-    setDashboards(prev => {
-      let next
-      if (dashId) {
-        // Agregar a dashboard existente
-        next = prev.map(d => d.id === dashId ? { ...d, paneles: [...d.paneles, panel] } : d)
-      } else {
-        // Crear nuevo dashboard con el panel
-        const nuevoId = newDashId()
-        next = [...prev, { id: nuevoId, nombre: nuevoDashNombre || 'Nuevo Dashboard', paneles: [panel] }]
-      }
-      persistDashboards(next)
-      return next
-    })
-    setFavModal(null)
-  }, [])
+  }, [recargarAlmacen])
+
+  const handleAddFavorite = useCallback(async ({ panelTitulo, dashId, nuevoDashNombre, sql, tipoRespuesta, grafico, esPrebuilt, prebuiltKey, filtrosActivos }) => {
+    const base = selectedDbRef.current?.nombre
+    if (!base) return
+
+    try {
+      // Sin dashId hay que crear el dashboard antes de colgarle el panel.
+      const destino = dashId
+        ?? (await datamartApi.dashboards.crear(base, { nombre: nuevoDashNombre || 'Nuevo Dashboard' })).id
+
+      await datamartApi.dashboards.agregarPanel(base, destino, {
+        titulo: panelTitulo,
+        sql,
+        tipoRespuesta: tipoRespuesta ?? 'Tabla',
+        grafico: grafico ?? null,
+        esPrebuilt: !!esPrebuilt,
+        prebuiltKey: prebuiltKey ?? null,
+        filtrosFijos: filtrosActivos ?? null,
+        aceptaFiltrosGlobales: true,
+      })
+
+      await recargarAlmacen(base)
+      setFavModal(null)
+    } catch (e) {
+      setErrorAlmacen(e?.response?.data?.error ?? 'No se pudo agregar el panel.')
+    }
+  }, [recargarAlmacen])
 
   const handleFilterChange = useCallback((tipo, values) => {
     setContextVars(prev => {
@@ -1843,13 +2002,17 @@ export default function App() {
     if (lastUserMsg) handleSend(lastUserMsg.content)
   }, [handleSend])
 
-  const handleDeleteSaved = useCallback((id) => {
-    setSavedQueries(prev => {
-      const next = prev.filter(q => q.id !== id)
-      persistSavedQueries(next)
-      return next
-    })
-  }, [])
+  const handleDeleteSaved = useCallback(async (id) => {
+    const base = selectedDbRef.current?.nombre
+    if (!base) return
+
+    try {
+      await datamartApi.consultas.borrar(base, id)
+      await recargarAlmacen(base)
+    } catch (e) {
+      setErrorAlmacen(e?.response?.data?.error ?? 'No se pudo borrar la consulta.')
+    }
+  }, [recargarAlmacen])
 
   const handleRunSaved = useCallback(async (saved) => {
     const currentDb = selectedDbRef.current
@@ -1904,76 +2067,27 @@ export default function App() {
     }
   }, [])
 
-  const handleSuggestion = useCallback((pregunta) => {
-    const newUsage = { ...suggestionUsage, [pregunta]: (suggestionUsage[pregunta] || 0) + 1 }
-    setSuggestionUsage(newUsage)
-    try { localStorage.setItem('suggestion_usage', JSON.stringify(newUsage)) } catch {}
+  const handleSuggestion = useCallback((s) => {
+    // Acepta el objeto del catálogo o un texto suelto (el empty-state manda texto).
+    const pregunta = typeof s === 'string' ? s : s.pregunta
+
+    if (typeof s !== 'string' && s.id && selectedDb) {
+      // Optimista: el número sube en pantalla sin esperar al servidor. Registrar el
+      // uso es telemetría — si falla, la consulta del usuario no se entera.
+      setSugeridas(prev => prev.map(q => q.id === s.id
+        ? { ...q, usosTotales: (q.usosTotales || 0) + 1, usosPropios: (q.usosPropios || 0) + 1 }
+        : q))
+      datamartApi.sugeridas.marcarUso(selectedDb.nombre, s.id)
+        .catch(e => console.warn('No se pudo registrar el uso:', e?.message))
+    }
+
     handleSend(pregunta)
-  }, [handleSend, suggestionUsage])
+  }, [handleSend, selectedDb])
 
-  const suggestionsAdpro = [
-    { pregunta: 'Listar proyectos con su respectivo estado', categoria: 'Proyectos' },
-    { pregunta: 'Listar los macroproyectos del sistema incluyendo la empresa y sus respectivos codigos', categoria: 'Proyectos' },
-    { pregunta: '¿Cuál es el costo ejecutado vs presupuestado por proyecto de construcción?', categoria: 'Costos' },
-    { pregunta: '¿Cuáles son los capítulos o ítems de obra con mayor desviación entre presupuesto y ejecución?', categoria: 'Costos' },
-    { pregunta: '¿Cuál es el costo acumulado por tipo de recurso (materiales, mano de obra, equipos) por proyecto?', categoria: 'Costos' },
-    { pregunta: '¿Cómo ha evolucionado el gasto mensual de obra en cada proyecto este año?', categoria: 'Costos' },
-    { pregunta: '¿Cuál es el costo por metro cuadrado construido en cada proyecto activo?', categoria: 'Costos' },
-    { pregunta: '¿Qué materiales e insumos tienen mayor consumo en los proyectos activos?', categoria: 'Materiales' },
-    { pregunta: '¿Qué proveedores concentran el mayor gasto en materiales de construcción?', categoria: 'Materiales' },
-    { pregunta: '¿Cuál es el valor del inventario de mis proyectos en ejecución?', categoria: 'Materiales' },
-    { pregunta: 'Participación porcentual de cada tipo de insumo en el costo consumido total', categoria: 'Materiales' },
-    { pregunta: '¿Cuáles son los contratos de subcontratistas con mayor valor ejecutado vs contratado?', categoria: 'Contratos' },
-    { pregunta: '¿Cuál es el valor de actas cobradas por subcontratista en cada proyecto?', categoria: 'Contratos' },
-    { pregunta: 'Pareto de los proyectos según su desviación del asegurado respecto al proyectado (Asegurado mayor que el proyectado), adicionalmente organizados de forma descendente según su ejecución fisica', categoria: 'Análisis' },
-    { pregunta: 'Distribución porcentual por tipo de costo: presupuestado, proyectado y consumido', categoria: 'Análisis' },
-    { pregunta: 'Distribución porcentual por tipo de insumo: presupuestado, proyectado y consumido', categoria: 'Análisis' },
-    { pregunta: 'Proyección de demanda y costo unitario de los principales insumos de compras — tendencia OLS con ajuste estacional', categoria: 'Análisis' },
-    { pregunta: '¿Cuál es el índice de desempeño del costo (CPI) de cada proyecto activo?', categoria: 'Análisis' },
-    { pregunta: '¿Cuántos proyectos hay por ciudad y estado?', categoria: 'Proyectos' },
-    { pregunta: '¿Cuál es el costo ejecutado vs presupuestado agrupado por macroproyecto?', categoria: 'Costos' },
-    { pregunta: '¿Cuál es el valor mensual de materiales ingresados al almacén este año?', categoria: 'Materiales' },
-    { pregunta: '¿Cuál es el stock estimado de insumos (entradas menos salidas) en proyectos activos?', categoria: 'Materiales' },
-    // Familia 1 — Desviación y control del baseline
-    { pregunta: 'IRA — ¿Cuánto se ha desviado el proyectado actual respecto al presupuestado original por proyecto?', categoria: 'Control' },
-    { pregunta: 'CDT — ¿Qué capítulos concentran la mayor parte de la desviación total del proyecto (análisis Pareto por capítulo)?', categoria: 'Control' },
-    { pregunta: 'VAC — ¿Cuánto se estima que costará adicional al presupuesto original y cuál es el costo final estimado (EAC) de cada proyecto?', categoria: 'Control' },
-    // Familia 2 — Compromiso contractual y aseguramiento
-    { pregunta: '%A — ¿Qué porcentaje del presupuesto proyectado ya está asegurado mediante compras o contratos firmados por proyecto?', categoria: 'Aseguramiento' },
-    { pregunta: 'ICC — ¿Cuánto del dinero ya comprometido (asegurado) se ha convertido efectivamente en costo causado (invertido) por proyecto?', categoria: 'Aseguramiento' },
-    { pregunta: 'RCC — ¿Qué proporción del aseguramiento está cubierta por órdenes de compra versus contratos de subcontrato por proyecto?', categoria: 'Aseguramiento' },
-    { pregunta: '%NA — ¿Cuánto del presupuesto de cada capítulo aún no tiene respaldo contractual ni orden de compra?', categoria: 'Aseguramiento' },
-    // Familia 3 — Eficiencia operativa en ejecución
-    { pregunta: 'RR/APU — ¿Cuánto valor ganado se obtiene por cada peso consumido en cada capítulo de obra (rendimiento relativo Ejecutado/Consumido)?', categoria: 'Eficiencia' },
-    { pregunta: 'IONC — ¿Cuánto del insumo causado contablemente (invertido) aún no ha sido consumido en obra por proyecto?', categoria: 'Eficiencia' },
-    { pregunta: 'TQP — ¿A qué ritmo se está quemando el presupuesto mensualmente en cada proyecto activo este año (Tasa de Quemado Presupuestal)?', categoria: 'Eficiencia' },
-    { pregunta: 'SPI — ¿Cuánto falta por invertir para completar cada proyecto (saldo por invertir)?', categoria: 'Eficiencia' },
-    { pregunta: 'RCI — ¿Qué porcentaje del costo causado (invertido) ha sido efectivamente consumido en obra y qué parte permanece en almacén?', categoria: 'Eficiencia' },
-    // Familia 4 — Calidad de precio y gestión de compras
-    { pregunta: 'DUC — ¿En cuánto se desvía el valor real de los insumos comprados respecto al presupuestado por ítem?', categoria: 'Compras' },
-    { pregunta: 'IRI — ¿Qué ítems presentan simultáneamente mayor desviación de precio y alto peso dentro del presupuesto (índice de riesgo de ítem)?', categoria: 'Compras' },
-    { pregunta: 'III — ¿Cómo ha evolucionado el precio unitario de los insumos más comprados entre compras sucesivas (inflación interna de insumo)?', categoria: 'Compras' },
-    // Familia 5 — Proyección y aprendizaje
-    { pregunta: 'IAFF — ¿El ritmo de causación contable (invertido) está alineado con el avance físico reportado en cada proyecto?', categoria: 'Proyección' },
-    { pregunta: 'EPP — ¿Qué tan confiable es el proyectado como predictor del costo real invertido en cada proyecto?', categoria: 'Proyección' },
-    { pregunta: 'BIP — Comparativo del desempeño de todas las obras activas del portafolio en los siete conceptos de control (benchmark interno)', categoria: 'Proyección' },
-    { pregunta: 'GMC — ¿Cómo han evolucionado mes a mes los siete conceptos de control (presupuestado, proyectado, asegurado, invertido, consumido, ejecutado) en el portafolio activo?', categoria: 'Proyección' },
-  ]
-
-  const suggestionsSrm = [
-    { pregunta: '¿Cuáles son las licitaciones con mayor valor adjudicado?', categoria: 'Licitaciones' },
-    { pregunta: '¿Cuántas licitaciones se han creado por mes y cuál es su valor?', categoria: 'Licitaciones' },
-    { pregunta: '¿Cuáles son las licitaciones más recientes con sus proveedores adjudicados?', categoria: 'Licitaciones' },
-    { pregunta: '¿Cuál es el valor licitado vs presupuestado por actividad?', categoria: 'Licitaciones' },
-    { pregunta: '¿Qué proveedores han recibido más adjudicaciones y por qué valor?', categoria: 'Proveedores' },
-    { pregunta: '¿Cuáles son los proveedores adjudicados por proyecto en licitaciones?', categoria: 'Proveedores' },
-    { pregunta: '¿Cuál es el resumen de adjudicaciones por estado del proveedor?', categoria: 'Proveedores' },
-    { pregunta: '¿De qué ciudades provienen los proveedores con mayor valor adjudicado?', categoria: 'Proveedores' },
-    { pregunta: '¿Cuál es el valor total adjudicado en licitaciones por proyecto?', categoria: 'Adjudicaciones' },
-    { pregunta: '¿Qué actividades concentran el mayor valor en las licitaciones?', categoria: 'Adjudicaciones' },
-    { pregunta: '¿Qué insumos se incluyen con mayor valor en las licitaciones?', categoria: 'Adjudicaciones' },
-  ]
-
+  // Los dos arreglos de preguntas que vivian aca (41 de ADPRO y 11 de SRM) se
+  // mudaron a [ADP_DTM_APP].SuggestedQuestions dentro de cada datamart. El script
+  // 0002 los siembra con Origen = 'Sistema'; el usuario puede agregar los suyos y
+  // ocultar los que no le sirvan, y el conector de Claude ve exactamente lo mismo.
   const catColorsAdpro = {
     Proyectos: '#3b82f6', Costos: '#f59e0b', Materiales: '#10b981',
     Contratos: '#f97316', Análisis: '#8b5cf6',
@@ -1981,17 +2095,36 @@ export default function App() {
     Eficiencia: '#14b8a6', Compras: '#fb923c', Proyección: '#a855f7',
   }
   const catColorsSrm  = { Licitaciones: '#6366f1', Proveedores: '#06b6d4', Adjudicaciones: '#ec4899' }
-  const catColors = suggestionTab === 'adpro' ? catColorsAdpro : catColorsSrm
+  const catColorsBase = suggestionTab === 'adpro' ? catColorsAdpro : catColorsSrm
 
-  const allSuggestions = suggestionTab === 'adpro' ? suggestionsAdpro : suggestionsSrm
+  // El usuario puede inventar categorias al agregar sus preguntas, y para esas no
+  // hay color definido. Se les asigna uno estable derivado del nombre: el mismo
+  // texto da siempre el mismo color, sin tener que guardarlo en ningun lado.
+  const colorCategoria = (cat) => {
+    if (catColorsBase[cat]) return catColorsBase[cat]
+    let h = 0
+    for (let i = 0; i < cat.length; i++) h = (h * 31 + cat.charCodeAt(i)) % 360
+    return `hsl(${h}, 62%, 58%)`
+  }
+  const catColors = new Proxy({}, { get: (_, cat) => colorCategoria(String(cat)) })
+
+  const modulo = suggestionTab === 'adpro' ? 'ADPRO' : 'SRM'
+  const allSuggestions = sugeridas.filter(s => s.modulo === modulo)
   const categories = [...new Set(allSuggestions.map(s => s.categoria))]
+
+  // El uso ahora viene de la base. usosPropios alimenta el Top personal; el
+  // desempate por usosTotales hace que, entre dos que el usuario nunca uso, quede
+  // arriba la que mas usa el equipo.
+  const usoDe = (s) => s.usosPropios || 0
 
   const getSuggestionList = (cat, search, sort) => {
     let list = allSuggestions
-    if (cat === 'top') list = list.filter(s => (suggestionUsage[s.pregunta] || 0) > 0)
+    if (cat === 'top') list = list.filter(s => usoDe(s) > 0)
     else if (cat !== 'todas') list = list.filter(s => s.categoria === cat)
     if (search) list = list.filter(s => s.pregunta.toLowerCase().includes(search.toLowerCase()))
-    if (sort === 'uso' || cat === 'top') list = [...list].sort((a, b) => (suggestionUsage[b.pregunta] || 0) - (suggestionUsage[a.pregunta] || 0))
+    if (sort === 'uso' || cat === 'top') {
+      list = [...list].sort((a, b) => usoDe(b) - usoDe(a) || (b.usosTotales || 0) - (a.usosTotales || 0))
+    }
     else if (sort === 'az') list = [...list].sort((a, b) => a.pregunta.localeCompare(b.pregunta))
     return list
   }
@@ -2093,11 +2226,24 @@ export default function App() {
 
             {/* DB Selector */}
             <div className="relative">
-              <button onClick={() => { setDbOpen(v => { if (!v) { setTimeout(() => dbSearchRef.current?.focus(), 50); if (!dbsLoaded) cargarBases() } return !v }); setDbSearch('') }}
-                className="flex items-center gap-2 bg-black/20 hover:bg-black/30 border border-white/15 hover:border-white/25 rounded-lg px-3 py-1.5 text-xs font-mono transition-colors">
+              <button
+                onClick={() => {
+                  if (modoErp) return
+                  setDbOpen(v => { if (!v) { setTimeout(() => dbSearchRef.current?.focus(), 50); if (!dbsLoaded) cargarBases() } return !v })
+                  setDbSearch('')
+                }}
+                disabled={modoErp}
+                title={modoErp
+                  ? `Datamart definido por el ERP ${erpContext?.erpDatabase ?? ''} (dbo.ADPConfig)`
+                  : 'Seleccionar base de datos'}
+                className={`flex items-center gap-2 bg-black/20 border border-white/15 rounded-lg px-3 py-1.5 text-xs font-mono transition-colors ${modoErp ? 'cursor-default' : 'hover:bg-black/30 hover:border-white/25'}`}>
                 <Database size={12} className="text-white/60" />
-                <span className="text-white/90">{selectedDb ? selectedDb.nombre : 'Seleccionar BD'}</span>
-                {loadingDb ? <Loader2 size={12} className="animate-spin text-white/40" /> : <ChevronDown size={12} className="text-white/40" />}
+                <span className="text-white/90">{selectedDb ? selectedDb.nombre : (modoErp ? 'Sin datamart declarado' : 'Seleccionar BD')}</span>
+                {loadingDb
+                  ? <Loader2 size={12} className="animate-spin text-white/40" />
+                  : modoErp
+                    ? <Lock size={11} className="text-white/30" />
+                    : <ChevronDown size={12} className="text-white/40" />}
               </button>
               {dbOpen && (
                 <div className="absolute right-0 top-full mt-1 w-72 bg-ink-800 border border-gray-700 rounded-xl shadow-xl z-50 overflow-hidden">
@@ -2234,8 +2380,8 @@ export default function App() {
         {vistaActiva === 'dashboard' && (
           <Dashboard
             dashboards={dashboards}
-            setDashboards={setDashboards}
             database={selectedDb}
+            onCambio={() => recargarAlmacen(selectedDb?.nombre)}
             onGoConsulta={() => setVistaActiva('consulta')}
           />
         )}
@@ -2281,7 +2427,7 @@ export default function App() {
               {[{ key: 'top', label: '⭐ Top' }, { key: 'todas', label: 'Todas' }, ...categories.map(c => ({ key: c, label: c }))].map(({ key, label }) => {
                 const isActive = suggestionCategory === key
                 const color = catColors[key] || null
-                const topCount = key === 'top' ? allSuggestions.filter(s => (suggestionUsage[s.pregunta] || 0) > 0).length : null
+                const topCount = key === 'top' ? allSuggestions.filter(s => (s.usosPropios || 0) > 0).length : null
                 return (
                   <button key={key} onClick={() => setSuggestionCategory(key)}
                     className={`flex-shrink-0 px-3 py-1 rounded-full text-xs font-medium transition-all border ${
@@ -2329,7 +2475,7 @@ export default function App() {
                           <span className="text-xs font-mono text-gray-700">({catList.length})</span>
                         </div>
                         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
-                          {catList.map((s, i) => <SuggestionCard key={i} s={s} color={color} uso={suggestionUsage[s.pregunta] || 0} selectedDb={selectedDb} filtrosActivos={filtrosActivos} onSelect={() => { if (!selectedDb) return; setVistaActiva('consulta'); handleSuggestion(s.pregunta) }} />)}
+                          {catList.map((s, i) => <SuggestionCard key={s.id || i} s={s} color={color} uso={s.usosPropios || 0} usosEquipo={s.usosTotales || 0} selectedDb={selectedDb} filtrosActivos={filtrosActivos} onSelect={() => { if (!selectedDb) return; setVistaActiva('consulta'); handleSuggestion(s) }} />)}
                         </div>
                       </div>
                     )
@@ -2339,7 +2485,7 @@ export default function App() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
                     {list.map((s, i) => {
                       const color = catColors[s.categoria] || '#6b7280'
-                      return <SuggestionCard key={i} s={s} color={color} uso={suggestionUsage[s.pregunta] || 0} selectedDb={selectedDb} filtrosActivos={filtrosActivos} onSelect={() => { if (!selectedDb) return; setVistaActiva('consulta'); handleSuggestion(s.pregunta) }} />
+                      return <SuggestionCard key={s.id || i} s={s} color={color} uso={s.usosPropios || 0} usosEquipo={s.usosTotales || 0} selectedDb={selectedDb} filtrosActivos={filtrosActivos} onSelect={() => { if (!selectedDb) return; setVistaActiva('consulta'); handleSuggestion(s) }} />
                     })}
                   </div>
                 )

@@ -1,9 +1,7 @@
-using DocumentFormat.OpenXml.Packaging;
-using DocumentFormat.OpenXml.Wordprocessing;
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace DatamartAnalyzer.Api.Services;
+namespace DatamartAnalyzer.Core.Rag;
 
 public interface IDocumentService
 {
@@ -12,51 +10,98 @@ public interface IDocumentService
     bool HayDocumento { get; }
 }
 
+/// <summary>
+/// De donde sale el corpus del ERP. La API puede apuntar a un archivo del repo
+/// (asi editar docs\contexto-erp.md se ve sin recompilar); el conector MCP corre
+/// en la maquina del usuario final, donde ese archivo no existe, y usa el recurso
+/// embebido. Si no se declara ruta, o la ruta no existe, cae al embebido.
+/// </summary>
+public sealed class RagOptions
+{
+    public string? DocumentPath { get; set; }
+}
+
 public class DocumentService : IDocumentService
 {
+    /// <summary>Nombre logico del corpus embebido (ver DatamartAnalyzer.Core.csproj).</summary>
+    private const string RecursoEmbebido = "DatamartAnalyzer.Core.contexto-erp.md";
+
     private readonly string _textoCompleto;
     private readonly List<(string Titulo, string Contenido)> _secciones;
     private readonly ILogger<DocumentService> _logger;
 
     public bool HayDocumento => !string.IsNullOrWhiteSpace(_textoCompleto);
 
-    public DocumentService(IConfiguration config, ILogger<DocumentService> logger)
+    public DocumentService(RagOptions? opciones, ILogger<DocumentService> logger)
     {
         _logger = logger;
-        var ruta = config["Rag:DocumentPath"];
+        _textoCompleto = "";
+        _secciones = [];
 
-        if (string.IsNullOrWhiteSpace(ruta))
-        {
-            _logger.LogWarning("Rag:DocumentPath no configurado. El contexto ERP no estará disponible.");
-            _textoCompleto = "";
-            _secciones = [];
-            return;
-        }
-
-        if (!File.Exists(ruta))
-        {
-            _logger.LogWarning("Documento RAG no encontrado en: {ruta}", ruta);
-            _textoCompleto = "";
-            _secciones = [];
-            return;
-        }
+        var ruta = opciones?.DocumentPath;
+        var origen = "recurso embebido";
 
         try
         {
-            var ext = Path.GetExtension(ruta).ToLowerInvariant();
-            var textoRaw = ext is ".md" or ".txt" ? File.ReadAllText(ruta) : ExtraerTextoDocx(ruta);
+            // Solo texto plano. Hubo soporte de .docx, pero el corpus es
+            // docs\contexto-erp.md desde hace rato, y arrastrar DocumentFormat.OpenXml
+            // costaba 6,5 MB en el paquete del conector por una funcion que ya nadie
+            // llamaba.
+            var textoRaw = LeerDeArchivo(ruta, ref origen);
+            textoRaw ??= LeerEmbebido();
+
+            if (string.IsNullOrWhiteSpace(textoRaw))
+            {
+                _logger.LogWarning("No se pudo cargar el contexto ERP (ni archivo ni recurso embebido).");
+                return;
+            }
+
             _textoCompleto = LimpiarTexto(textoRaw);
             _secciones = SplitEnSecciones(_textoCompleto);
             _logger.LogInformation(
-                "Documento ERP cargado: {chars} chars, {secciones} secciones",
-                _textoCompleto.Length, _secciones.Count);
+                "Documento ERP cargado desde {origen}: {chars} chars, {secciones} secciones",
+                origen, _textoCompleto.Length, _secciones.Count);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error leyendo documento RAG: {ruta}", ruta);
+            _logger.LogError(ex, "Error leyendo el contexto ERP desde {origen}", origen);
             _textoCompleto = "";
             _secciones = [];
         }
+    }
+
+    /// <summary>
+    /// El archivo declarado, si existe y es texto. Devuelve null para que el llamador
+    /// caiga al recurso embebido — y deja dicho por que en el log, porque "no aparece
+    /// mi cambio en contexto-erp.md" es la pregunta que se hace despues.
+    /// </summary>
+    private string? LeerDeArchivo(string? ruta, ref string origen)
+    {
+        if (string.IsNullOrWhiteSpace(ruta)) return null;
+
+        if (!File.Exists(ruta))
+        {
+            _logger.LogWarning("Contexto ERP no encontrado en {ruta}; se usa el embebido.", ruta);
+            return null;
+        }
+
+        if (Path.GetExtension(ruta).ToLowerInvariant() is not (".md" or ".txt"))
+        {
+            _logger.LogWarning("El contexto ERP debe ser .md o .txt; {ruta} no lo es. Se usa el embebido.", ruta);
+            return null;
+        }
+
+        origen = ruta;
+        return File.ReadAllText(ruta);
+    }
+
+    private static string? LeerEmbebido()
+    {
+        var asm = typeof(DocumentService).Assembly;
+        using var s = asm.GetManifestResourceStream(RecursoEmbebido);
+        if (s is null) return null;
+        using var r = new StreamReader(s, Encoding.UTF8);
+        return r.ReadToEnd();
     }
 
     /// <summary>Retorna el documento completo (para bloque cacheado).</summary>
@@ -168,33 +213,4 @@ public class DocumentService : IDocumentService
                .Distinct()
                .ToList();
 
-    private static string ExtraerTextoDocx(string ruta)
-    {
-        var sb = new StringBuilder();
-        using var doc = WordprocessingDocument.Open(ruta, isEditable: false);
-        var body = doc.MainDocumentPart?.Document?.Body;
-        if (body is null) return "";
-
-        foreach (var elemento in body.Elements())
-        {
-            if (elemento is Paragraph parrafo)
-            {
-                var texto = parrafo.InnerText.Trim();
-                if (!string.IsNullOrEmpty(texto))
-                    sb.AppendLine(texto);
-            }
-            else if (elemento is Table tabla)
-            {
-                foreach (var fila in tabla.Elements<TableRow>())
-                {
-                    var celdas = fila.Elements<TableCell>()
-                        .Select(c => c.InnerText.Trim())
-                        .Where(t => !string.IsNullOrEmpty(t));
-                    sb.AppendLine(string.Join(" | ", celdas));
-                }
-            }
-        }
-
-        return sb.ToString();
-    }
 }

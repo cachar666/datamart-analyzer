@@ -1,10 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Dapper;
-using DatamartAnalyzer.Api.Models;
+using DatamartAnalyzer.Core.Charts;
+using DatamartAnalyzer.Core.Models;
 using Microsoft.Data.SqlClient;
 
-namespace DatamartAnalyzer.Api.Services;
+namespace DatamartAnalyzer.Core.Store;
 
 /// <summary>
 /// Almacén de consultas y dashboards. Vive DENTRO de cada base de datamart,
@@ -17,6 +18,10 @@ namespace DatamartAnalyzer.Api.Services;
 public interface IStoreRepository
 {
     Task<bool> HayAlmacenAsync(string database);
+
+    /// <summary>Una sola conexión responde las dos preguntas: ¿se llega? ¿está instalado?</summary>
+    Task<(bool Alcanzable, bool Instalado, string? Error)> VerificarAlmacenAsync(string database);
+
     Task<StoreStatusDto> EstadoAsync(string database);
 
     // Consultas guardadas
@@ -39,6 +44,19 @@ public interface IStoreRepository
     Task<bool> QuitarPanelAsync(string database, Guid dashboardId, Guid panelId);
     Task<bool> ReordenarPanelesAsync(string database, Guid dashboardId, List<Guid> panelIds);
 
+    // Preguntas sugeridas
+    Task<List<SuggestedQuestionDto>> ListarSugeridasAsync(
+        string database, string? modulo = null, bool incluirOcultas = false);
+    Task<SuggestedQuestionDto> CrearSugeridaAsync(string database, CreateSuggestedQuestionRequest req);
+    Task<SuggestedQuestionDto?> ActualizarSugeridaAsync(string database, Guid id, UpdateSuggestedQuestionRequest req);
+    Task<bool> BorrarSugeridaAsync(string database, Guid id);
+    Task<bool> RegistrarUsoSugeridaAsync(string database, Guid id);
+
+    // Categorías del catálogo
+    Task<List<SuggestedCategoryDto>> ListarCategoriasAsync(string database, string? modulo = null);
+    Task<SuggestedCategoryDto> CrearCategoriaAsync(string database, CreateSuggestedCategoryRequest req);
+    Task<bool> BorrarCategoriaAsync(string database, Guid id);
+
     // Presets de filtros
     Task<List<FilterPresetDto>> ListarPresetsAsync(string database);
     Task<FilterPresetDto> CrearPresetAsync(string database, CreateFilterPresetRequest req);
@@ -53,7 +71,7 @@ public class StoreRepository : IStoreRepository
     /// <summary>Esquema donde vive el almacén, hermano de ADP_DTM_FACT / DIM / VCONF.</summary>
     public const string Schema = "ADP_DTM_APP";
 
-    private readonly IDatamartConnectionResolver _conexiones;
+    private readonly IConexionDatamart _conexiones;
     private readonly ILogger<StoreRepository> _logger;
 
     // JsonStringEnumConverter es obligatorio: ConfiguracionGrafico.Tipo es el enum
@@ -66,14 +84,14 @@ public class StoreRepository : IStoreRepository
         Converters = { new JsonStringEnumConverter() }
     };
 
-    public StoreRepository(IDatamartConnectionResolver conexiones, ILogger<StoreRepository> logger)
+    public StoreRepository(IConexionDatamart conexiones, ILogger<StoreRepository> logger)
     {
         _conexiones = conexiones;
         _logger = logger;
     }
 
     /// <summary>
-    /// La conexión la decide IDatamartConnectionResolver: en modo ERP el datamart puede
+    /// La conexión la decide IConexionDatamart: en modo ERP el datamart puede
     /// vivir en otro servidor y con otras credenciales, así que no se arma desde
     /// DefaultConnection.
     /// </summary>
@@ -141,12 +159,19 @@ public class StoreRepository : IStoreRepository
     private static TipoRespuesta ParseTipo(string valor) =>
         Enum.TryParse<TipoRespuesta>(valor, ignoreCase: true, out var t) ? t : TipoRespuesta.Tabla;
 
-    private static ConfiguracionGrafico? LeerGrafico(string? json)
-    {
-        if (string.IsNullOrWhiteSpace(json)) return null;
-        try { return JsonSerializer.Deserialize<ConfiguracionGrafico>(json, JsonOpts); }
-        catch { return null; }
-    }
+    /// <summary>
+    /// Lee la configuracion del grafico y devuelve null si NO se puede dibujar.
+    ///
+    /// GraficoJson es texto libre, y hay paneles guardados con otro esquema
+    /// —{"tipo","ejeX","series":[...]}— que deserializa "bien" pero deja CampoEjeX y
+    /// CampoEjeY vacios. Devolver ese objeto a medias hacia que el front dibujara
+    /// unos ejes sin nada adentro.
+    ///
+    /// Graficos.Leer entiende las dos formas y devuelve null cuando de verdad no hay
+    /// nada dibujable, asi los paneles que ya estan guardados con el esquema viejo
+    /// vuelven a pintar sin que nadie tenga que rehacerlos.
+    /// </summary>
+    private static ConfiguracionGrafico? LeerGrafico(string? json) => Graficos.Leer(json);
 
     private static Dictionary<string, List<string>>? LeerFiltros(string? json)
     {
@@ -178,7 +203,13 @@ public class StoreRepository : IStoreRepository
 
     // ── Estado del almacén ───────────────────────────────────────────────────
 
-    public async Task<bool> HayAlmacenAsync(string database)
+    /// <summary>
+    /// Distingue las dos formas de "no hay almacén", que exigen respuestas opuestas:
+    /// si NO SE LLEGA al servidor no hay nada que instalar, y decirle a alguien que
+    /// corra el script de instalación lo manda a perder el tiempo. Antes las dos
+    /// caían en el mismo `false`.
+    /// </summary>
+    public async Task<(bool Alcanzable, bool Instalado, string? Error)> VerificarAlmacenAsync(string database)
     {
         try
         {
@@ -188,14 +219,17 @@ public class StoreRepository : IStoreRepository
                 WHERE TABLE_SCHEMA = '{Schema}'
                   AND TABLE_NAME IN ('SavedQueries','Dashboards','DashboardPanels','FilterPresets')
                 """);
-            return tablas == 4;
+            return (true, tablas == 4, null);
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "No se pudo verificar el almacén en {database}", database);
-            return false;
+            return (false, false, ex.Message);
         }
     }
+
+    public async Task<bool> HayAlmacenAsync(string database) =>
+        (await VerificarAlmacenAsync(database)).Instalado;
 
     public async Task<StoreStatusDto> EstadoAsync(string database)
     {
@@ -246,6 +280,14 @@ public class StoreRepository : IStoreRepository
 
     public async Task<SavedQueryDto> CrearConsultaAsync(string database, CreateSavedQueryRequest req)
     {
+        // Misma regla que en los paneles: no se guarda una consulta que promete un
+        // grafico sin traerlo. Un favorito que dibuja en blanco es peor que uno que
+        // muestra la tabla.
+        var grafico = Graficos.Normalizar(req.Grafico);
+        var tipo = grafico is null && req.TipoRespuesta is TipoRespuesta.Grafico or TipoRespuesta.TablaMasGrafico
+            ? TipoRespuesta.Tabla
+            : req.TipoRespuesta;
+
         await using var conn = await ConnAsync(database);
         var id = await conn.QuerySingleAsync<Guid>($"""
             INSERT INTO [{Schema}].SavedQueries (Pregunta, Sql, TipoRespuesta, GraficoJson, Tags)
@@ -256,8 +298,8 @@ public class StoreRepository : IStoreRepository
             {
                 req.Pregunta,
                 req.Sql,
-                TipoRespuesta = req.TipoRespuesta.ToString(),
-                GraficoJson = EscribirJson(req.Grafico),
+                TipoRespuesta = tipo.ToString(),
+                GraficoJson = EscribirJson(grafico),
                 req.Tags
             });
 
@@ -399,6 +441,15 @@ public class StoreRepository : IStoreRepository
             sql = req.Sql;
         }
 
+        // Un panel no puede prometer un grafico que no tiene. Guardarlo asi era la
+        // forma de terminar con el recuadro vacio del dashboard: TipoRespuesta decia
+        // TablaMasGrafico, GraficoJson estaba en NULL, y nadie se enteraba hasta
+        // abrirlo. Se corrige aca porque es el unico camino que comparten la API, el
+        // conector y la importacion.
+        grafico = Graficos.Normalizar(grafico);
+        if (grafico is null && tipo is TipoRespuesta.Grafico or TipoRespuesta.TablaMasGrafico)
+            tipo = TipoRespuesta.Tabla;
+
         await using var conn = await ConnAsync(database);
 
         var siguienteOrden = await conn.ExecuteScalarAsync<int>($"""
@@ -535,6 +586,296 @@ public class StoreRepository : IStoreRepository
     private static Task TocarDashboardAsync(SqlConnection conn, Guid dashboardId) =>
         conn.ExecuteAsync($"UPDATE [{Schema}].Dashboards SET UpdatedAt = SYSUTCDATETIME() WHERE Id = @dashboardId",
             new { dashboardId });
+
+    // ── Preguntas sugeridas ──────────────────────────────────────────────────
+
+    private sealed class SugeridaRow
+    {
+        public Guid Id { get; set; }
+        public string? ClaveSistema { get; set; }
+        public string Modulo { get; set; } = "";
+        public string Categoria { get; set; } = "";
+        public string Pregunta { get; set; } = "";
+        public string Origen { get; set; } = "";
+        public bool Activa { get; set; }
+        public int Orden { get; set; }
+        public int UsosTotales { get; set; }
+        public int UsosPropios { get; set; }
+        public DateTime? UltimoUso { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public string CreatedBy { get; set; } = "";
+    }
+
+    /// <summary>
+    /// El catálogo con sus contadores. Los usos se cuentan en el mismo SELECT, uno
+    /// global y otro del usuario actual — decidido así porque el Top del equipo y el
+    /// personal se muestran en la misma pantalla y separarlos serían dos viajes.
+    ///
+    /// Por defecto NO devuelve las ocultas: quien las ocultó no quiere verlas. La
+    /// pantalla de administración pide incluirOcultas para poder reactivarlas.
+    /// </summary>
+    public async Task<List<SuggestedQuestionDto>> ListarSugeridasAsync(
+        string database, string? modulo = null, bool incluirOcultas = false)
+    {
+        await using var conn = await ConnAsync(database);
+
+        var filas = await conn.QueryAsync<SugeridaRow>($"""
+            SELECT  q.Id, q.ClaveSistema, q.Modulo, q.Categoria, q.Pregunta,
+                    q.Origen, q.Activa, q.Orden, q.CreatedAt, q.CreatedBy,
+                    UsosTotales = (SELECT COUNT(*) FROM [{Schema}].SuggestedQuestionUsage u
+                                    WHERE u.QuestionId = q.Id),
+                    UsosPropios = (SELECT COUNT(*) FROM [{Schema}].SuggestedQuestionUsage u
+                                    WHERE u.QuestionId = q.Id AND u.Usuario = SUSER_SNAME()),
+                    UltimoUso   = (SELECT MAX(u.UsedAt) FROM [{Schema}].SuggestedQuestionUsage u
+                                    WHERE u.QuestionId = q.Id)
+            FROM [{Schema}].SuggestedQuestions q
+            WHERE (@modulo IS NULL OR q.Modulo = @modulo)
+              AND (@incluirOcultas = 1 OR q.Activa = 1)
+            ORDER BY q.Modulo, q.Orden, q.Categoria
+            """,
+            new { modulo, incluirOcultas });
+
+        return filas.Select(f => MapSugerida(database, f)).ToList();
+    }
+
+    private static SuggestedQuestionDto MapSugerida(string database, SugeridaRow f) =>
+        new(f.Id, database, f.ClaveSistema, f.Modulo, f.Categoria, f.Pregunta,
+            Enum.TryParse<OrigenPregunta>(f.Origen, ignoreCase: true, out var o) ? o : OrigenPregunta.Usuario,
+            f.Activa, f.Orden, f.UsosTotales, f.UsosPropios, f.UltimoUso, f.CreatedAt, f.CreatedBy);
+
+    /// <summary>
+    /// Crea una pregunta del usuario. ClaveSistema queda en NULL a propósito: es lo
+    /// que la distingue de las nuestras y lo que impide que una re-siembra la pise.
+    /// </summary>
+    public async Task<SuggestedQuestionDto> CrearSugeridaAsync(
+        string database, CreateSuggestedQuestionRequest req)
+    {
+        if (string.IsNullOrWhiteSpace(req.Pregunta))
+            throw new ArgumentException("La pregunta no puede estar vacía.", nameof(req));
+
+        var modulo = string.IsNullOrWhiteSpace(req.Modulo) ? "ADPRO" : req.Modulo.Trim().ToUpperInvariant();
+        if (modulo is not ("ADPRO" or "SRM"))
+            throw new ArgumentException($"Módulo '{modulo}' no válido. Se espera ADPRO o SRM.", nameof(req));
+
+        var categoria = string.IsNullOrWhiteSpace(req.Categoria) ? "Mis preguntas" : req.Categoria.Trim();
+
+        await using var conn = await ConnAsync(database);
+
+        // Si la categoría no existía, escribirla acá ES crearla. Obligar a crearla
+        // aparte primero sería un paso de más sin ninguna ganancia.
+        await AsegurarCategoriaAsync(conn, modulo, categoria);
+
+        // Va al final de su módulo, no al principio: agregar una propia no debería
+        // reordenar lo que el usuario ya tenía a la vista.
+        var id = await conn.QuerySingleAsync<Guid>($"""
+            INSERT INTO [{Schema}].SuggestedQuestions (Modulo, Categoria, Pregunta, Origen, Orden)
+            OUTPUT INSERTED.Id
+            SELECT @modulo, @categoria, @pregunta, 'Usuario',
+                   ISNULL((SELECT MAX(Orden) FROM [{Schema}].SuggestedQuestions WHERE Modulo = @modulo), 0) + 1
+            """,
+            new { modulo, categoria, pregunta = req.Pregunta.Trim() });
+
+        return (await ListarSugeridasAsync(database, modulo, incluirOcultas: true)).First(q => q.Id == id);
+    }
+
+    /// <summary>
+    /// Actualiza una pregunta. De las del sistema sólo se puede tocar Activa y Orden:
+    /// el texto y la categoría los manda el catálogo, y dejar que se editen crearía
+    /// una versión local que la próxima re-siembra pisaría sin avisar.
+    /// </summary>
+    public async Task<SuggestedQuestionDto?> ActualizarSugeridaAsync(
+        string database, Guid id, UpdateSuggestedQuestionRequest req)
+    {
+        await using var conn = await ConnAsync(database);
+
+        var origen = await conn.QuerySingleOrDefaultAsync<string>(
+            $"SELECT Origen FROM [{Schema}].SuggestedQuestions WHERE Id = @id", new { id });
+
+        if (origen is null) return null;
+
+        var esSistema = origen.Equals("Sistema", StringComparison.OrdinalIgnoreCase);
+
+        if (esSistema && (req.Pregunta is not null || req.Categoria is not null))
+            throw new InvalidOperationException(
+                "No se puede cambiar el texto ni la categoría de una pregunta del sistema; " +
+                "la próxima actualización lo revertiría. Ocultala y creá la tuya.");
+
+        await conn.ExecuteAsync($"""
+            UPDATE [{Schema}].SuggestedQuestions
+               SET Pregunta  = COALESCE(@pregunta, Pregunta),
+                   Categoria = COALESCE(@categoria, Categoria),
+                   Activa    = COALESCE(@activa, Activa),
+                   Orden     = COALESCE(@orden, Orden),
+                   UpdatedAt = SYSUTCDATETIME()
+             WHERE Id = @id
+            """,
+            new { id, pregunta = req.Pregunta, categoria = req.Categoria, activa = req.Activa, orden = req.Orden });
+
+        return (await ListarSugeridasAsync(database, null, incluirOcultas: true)).FirstOrDefault(q => q.Id == id);
+    }
+
+    /// <summary>
+    /// Borra una pregunta del usuario. Las del sistema NO se borran — se ocultan con
+    /// Activa = 0. Si se borraran, la próxima re-siembra las traería de vuelta y
+    /// parecería un error del producto.
+    /// </summary>
+    public async Task<bool> BorrarSugeridaAsync(string database, Guid id)
+    {
+        await using var conn = await ConnAsync(database);
+
+        var origen = await conn.QuerySingleOrDefaultAsync<string>(
+            $"SELECT Origen FROM [{Schema}].SuggestedQuestions WHERE Id = @id", new { id });
+
+        if (origen is null) return false;
+
+        if (origen.Equals("Sistema", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                "Las preguntas del sistema no se borran: se ocultan. " +
+                "La próxima actualización del catálogo volvería a traerla.");
+
+        var filas = await conn.ExecuteAsync(
+            $"DELETE FROM [{Schema}].SuggestedQuestions WHERE Id = @id", new { id });
+
+        return filas > 0;
+    }
+
+    /// <summary>
+    /// Deja constancia de que alguien lanzó esta pregunta. Se guarda el evento y no
+    /// un contador porque hacen falta las dos vistas: el Top del equipo y el de cada
+    /// uno.
+    /// </summary>
+    public async Task<bool> RegistrarUsoSugeridaAsync(string database, Guid id)
+    {
+        await using var conn = await ConnAsync(database);
+
+        var filas = await conn.ExecuteAsync($"""
+            INSERT INTO [{Schema}].SuggestedQuestionUsage (QuestionId)
+            SELECT Id FROM [{Schema}].SuggestedQuestions WHERE Id = @id
+            """, new { id });
+
+        return filas > 0;
+    }
+
+    // ── Categorías del catálogo ──────────────────────────────────────────────
+
+    private sealed class CategoriaRow
+    {
+        public Guid Id { get; set; }
+        public string Modulo { get; set; } = "";
+        public string Nombre { get; set; } = "";
+        public string Origen { get; set; } = "";
+        public int Orden { get; set; }
+        public int Preguntas { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public string CreatedBy { get; set; } = "";
+    }
+
+    public async Task<List<SuggestedCategoryDto>> ListarCategoriasAsync(string database, string? modulo = null)
+    {
+        await using var conn = await ConnAsync(database);
+
+        var filas = await conn.QueryAsync<CategoriaRow>($"""
+            SELECT c.Id, c.Modulo, c.Nombre, c.Origen, c.Orden, c.CreatedAt, c.CreatedBy,
+                   Preguntas = (SELECT COUNT(*) FROM [{Schema}].SuggestedQuestions q
+                                 WHERE q.Modulo = c.Modulo AND q.Categoria = c.Nombre)
+            FROM [{Schema}].SuggestedCategories c
+            WHERE (@modulo IS NULL OR c.Modulo = @modulo)
+            ORDER BY c.Modulo, c.Orden, c.Nombre
+            """, new { modulo });
+
+        return filas.Select(f => new SuggestedCategoryDto(
+            f.Id, database, f.Modulo, f.Nombre,
+            Enum.TryParse<OrigenPregunta>(f.Origen, true, out var o) ? o : OrigenPregunta.Usuario,
+            f.Orden, f.Preguntas, f.CreatedAt, f.CreatedBy)).ToList();
+    }
+
+    public async Task<SuggestedCategoryDto> CrearCategoriaAsync(
+        string database, CreateSuggestedCategoryRequest req)
+    {
+        var (modulo, nombre) = ValidarCategoria(req.Modulo, req.Nombre);
+
+        await using var conn = await ConnAsync(database);
+
+        var yaEsta = await conn.QuerySingleOrDefaultAsync<string>($"""
+            SELECT Origen FROM [{Schema}].SuggestedCategories
+            WHERE Modulo = @modulo AND Nombre = @nombre
+            """, new { modulo, nombre });
+
+        if (yaEsta is not null)
+            throw new InvalidOperationException(
+                $"Ya existe una categoría '{nombre}' en {modulo} " +
+                $"({(yaEsta.Equals("Sistema", StringComparison.OrdinalIgnoreCase) ? "del sistema" : "tuya")}).");
+
+        // Al final: una categoría nueva no debería reordenar lo que ya se veía.
+        var id = await conn.QuerySingleAsync<Guid>($"""
+            INSERT INTO [{Schema}].SuggestedCategories (Modulo, Nombre, Origen, Orden)
+            OUTPUT INSERTED.Id
+            SELECT @modulo, @nombre, 'Usuario',
+                   ISNULL((SELECT MAX(Orden) FROM [{Schema}].SuggestedCategories WHERE Modulo = @modulo), 0) + 1
+            """, new { modulo, nombre });
+
+        return (await ListarCategoriasAsync(database, modulo)).First(c => c.Id == id);
+    }
+
+    /// <summary>
+    /// Borra una categoría del usuario. Se rechaza en dos casos, por razones
+    /// distintas: si es del sistema no es suya; si tiene preguntas colgando, el
+    /// borrado las dejaría en una categoría que ya no existe y desaparecerían de la
+    /// pantalla sin que nadie las haya borrado.
+    /// </summary>
+    public async Task<bool> BorrarCategoriaAsync(string database, Guid id)
+    {
+        await using var conn = await ConnAsync(database);
+
+        var cat = await conn.QuerySingleOrDefaultAsync<CategoriaRow>($"""
+            SELECT c.Id, c.Modulo, c.Nombre, c.Origen, c.Orden, c.CreatedAt, c.CreatedBy,
+                   Preguntas = (SELECT COUNT(*) FROM [{Schema}].SuggestedQuestions q
+                                 WHERE q.Modulo = c.Modulo AND q.Categoria = c.Nombre)
+            FROM [{Schema}].SuggestedCategories c WHERE c.Id = @id
+            """, new { id });
+
+        if (cat is null) return false;
+
+        if (cat.Origen.Equals("Sistema", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException(
+                $"La categoría '{cat.Nombre}' es del sistema y no se puede borrar. " +
+                "Sólo se borran las que creaste vos.");
+
+        if (cat.Preguntas > 0)
+            throw new InvalidOperationException(
+                $"La categoría '{cat.Nombre}' tiene {cat.Preguntas} pregunta(s). " +
+                "Movelas o borralas primero: si no, quedarían en una categoría inexistente.");
+
+        return await conn.ExecuteAsync(
+            $"DELETE FROM [{Schema}].SuggestedCategories WHERE Id = @id", new { id }) > 0;
+    }
+
+    private static (string Modulo, string Nombre) ValidarCategoria(string? modulo, string? nombre)
+    {
+        var m = string.IsNullOrWhiteSpace(modulo) ? "ADPRO" : modulo.Trim().ToUpperInvariant();
+        if (m is not ("ADPRO" or "SRM"))
+            throw new ArgumentException($"Módulo '{m}' no válido. Se espera ADPRO o SRM.");
+
+        var n = nombre?.Trim() ?? "";
+        if (n.Length == 0) throw new ArgumentException("El nombre de la categoría no puede estar vacío.");
+        if (n.Length > 50) throw new ArgumentException("El nombre de la categoría no puede superar 50 caracteres.");
+
+        return (m, n);
+    }
+
+    /// <summary>
+    /// Registra la categoría si no existía. Se llama al crear una pregunta: escribir
+    /// una categoría nueva ahí ES crearla, y obligar a crearla aparte primero sería
+    /// un paso de más sin ninguna ganancia.
+    /// </summary>
+    private async Task AsegurarCategoriaAsync(SqlConnection conn, string modulo, string nombre) =>
+        await conn.ExecuteAsync($"""
+            IF NOT EXISTS (SELECT 1 FROM [{Schema}].SuggestedCategories
+                            WHERE Modulo = @modulo AND Nombre = @nombre)
+            INSERT INTO [{Schema}].SuggestedCategories (Modulo, Nombre, Origen, Orden)
+            SELECT @modulo, @nombre, 'Usuario',
+                   ISNULL((SELECT MAX(Orden) FROM [{Schema}].SuggestedCategories WHERE Modulo = @modulo), 0) + 1
+            """, new { modulo, nombre });
 
     // ── Presets de filtros ───────────────────────────────────────────────────
 

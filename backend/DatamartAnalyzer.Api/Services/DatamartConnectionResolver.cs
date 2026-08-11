@@ -1,4 +1,5 @@
-using DatamartAnalyzer.Api.Models;
+using DatamartAnalyzer.Core.Models;
+using DatamartAnalyzer.Core.Store;
 using Microsoft.Data.SqlClient;
 
 namespace DatamartAnalyzer.Api.Services;
@@ -19,7 +20,13 @@ namespace DatamartAnalyzer.Api.Services;
 /// Se resuelve por NOMBRE de perfil o por nombre de base, así el conector MCP y
 /// el frontend pueden referirse al datamart con la etiqueta legible.
 /// </summary>
-public interface IDatamartConnectionResolver
+/// <remarks>
+/// Extiende <see cref="IConexionDatamart"/> — el contrato mínimo que Core le pide al
+/// mundo: "dame la cadena de conexión de este datamart". Así el almacén (StoreRepository,
+/// StoreMigrator) no sabe si la conexión vino del ERP, de appsettings o de las cuatro
+/// credenciales que el usuario cargó en el conector MCP.
+/// </remarks>
+public interface IDatamartConnectionResolver : IConexionDatamart
 {
     /// <summary>true si el datamart lo dicta el ERP (no se enumera el servidor local).</summary>
     bool ModoErp { get; }
@@ -30,8 +37,8 @@ public interface IDatamartConnectionResolver
     /// <summary>Perfil que corresponde a ese nombre o base, o null.</summary>
     Task<DatamartConexion?> BuscarAsync(string nombreOBase);
 
-    /// <summary>Cadena de conexión para trabajar sobre ese datamart.</summary>
-    Task<string> ResolverAsync(string nombreOBase);
+    // ResolverAsync(string) lo aporta IConexionDatamart — no se redeclara acá para
+    // no ocultar el miembro base (CS0108).
 
     /// <summary>¿Se puede abrir la conexión? No se apoya en el catálogo local.</summary>
     Task<bool> EsAlcanzableAsync(string nombreOBase);

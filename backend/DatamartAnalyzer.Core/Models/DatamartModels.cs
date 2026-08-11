@@ -1,6 +1,6 @@
 using Microsoft.Data.SqlClient;
 
-namespace DatamartAnalyzer.Api.Models;
+namespace DatamartAnalyzer.Core.Models;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Conexión a un datamart — UN SOLO modelo para todos los caminos.

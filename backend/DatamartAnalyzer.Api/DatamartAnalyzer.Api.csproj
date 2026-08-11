@@ -9,7 +9,6 @@
 
   <ItemGroup>
     <PackageReference Include="Dapper" Version="2.1.35" />
-    <PackageReference Include="DocumentFormat.OpenXml" Version="3.1.0" />
     <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="System.Text.Json" Version="8.0.5" />
@@ -25,6 +24,11 @@
       <LogicalName>DatamartAnalyzer.Migrations.Scripts.%(Filename)%(Extension)</LogicalName>
       <Link>Scripts\%(Filename)%(Extension)</Link>
     </EmbeddedResource>
+  </ItemGroup>
+
+
+  <ItemGroup>
+    <ProjectReference Include="..\DatamartAnalyzer.Core\DatamartAnalyzer.Core.csproj" />
   </ItemGroup>
 
 </Project>

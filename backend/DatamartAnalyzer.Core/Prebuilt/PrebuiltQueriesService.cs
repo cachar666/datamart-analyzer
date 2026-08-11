@@ -1,6 +1,6 @@
-using DatamartAnalyzer.Api.Models;
+using DatamartAnalyzer.Core.Models;
 
-namespace DatamartAnalyzer.Api.Services;
+namespace DatamartAnalyzer.Core.Prebuilt;
 
 public interface IPrebuiltQueriesService
 {

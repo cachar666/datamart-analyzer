@@ -46,7 +46,10 @@ param(
 
     # Por defecto se detiene el backend antes de compilar: si esta corriendo,
     # tiene bloqueado DatamartAnalyzer.Api.exe y el build falla con MSB3027.
-    [switch] $NoDetener
+    [switch] $NoDetener,
+
+    # El script relanza el backend si el mismo lo detuvo. Con esto no lo hace.
+    [switch] $NoReiniciar
 )
 
 $ErrorActionPreference = 'Stop'
@@ -62,6 +65,7 @@ $Config      = if ($Release) { 'Release' } else { 'Debug' }
 $inicio = Get-Date
 $fallos = @()
 $huboBloqueo = $false
+$detuvimosBackend = $false
 
 function Escribir-Titulo([string]$texto) {
     Write-Host ""
@@ -111,7 +115,7 @@ Write-Host "Repo          : $RepoRoot"
 Write-Host "Configuración : $Config"
 Write-Host "Objetivo      : $Que"
 
-if (-not $NoDetener) { Detener-Backend | Out-Null }
+if (-not $NoDetener) { $detuvimosBackend = Detener-Backend }
 
 # --- Limpiar -----------------------------------------------------------
 if ($Limpiar) {
@@ -226,6 +230,11 @@ if ($Que -in @('Todo', 'Frontend')) {
     else {
         Escribir-Titulo "Compilando Frontend"
         Push-Location $FrontDir
+        # npm manda avisos por stderr (Browserslist, deprecaciones). Con
+        # ErrorActionPreference='Stop' eso se vuelve error terminante y tumba un
+        # build que en realidad salio bien. Se afloja solo para este tramo.
+        $eapFront = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
         try {
             if (-not (Test-Path (Join-Path $FrontDir 'node_modules'))) {
                 Write-Host "  node_modules ausente, instalando..." -ForegroundColor DarkGray
@@ -242,7 +251,7 @@ if ($Que -in @('Todo', 'Frontend')) {
             Write-Host "  FALLÓ - $_" -ForegroundColor Red
             $fallos += 'Frontend'
         }
-        finally { Pop-Location }
+        finally { $ErrorActionPreference = $eapFront; Pop-Location }
     }
 }
 
@@ -254,6 +263,18 @@ Write-Host ("-" * 64) -ForegroundColor DarkGray
 
 if ($fallos.Count -eq 0) {
     Write-Host "Build correcto en $duracion s." -ForegroundColor Green
+
+    # Si lo detuvimos nosotros, lo devolvemos a como estaba: dejarlo caido hace
+    # que los endpoints respondan 500 y parezca un error de la aplicacion.
+    if ($detuvimosBackend -and -not $NoReiniciar) {
+        $backendDir = Join-Path $RepoRoot 'backend\DatamartAnalyzer.Api'
+        Write-Host ""
+        Write-Host "Relanzando el backend..." -ForegroundColor DarkGray
+        $cmdArgs = '/k title Datamart-Backend && cd /d "' + $backendDir +
+                   '" && set ASPNETCORE_ENVIRONMENT=Development&& dotnet run'
+        Start-Process 'cmd.exe' -ArgumentList $cmdArgs
+        Write-Host "  Levantando en http://localhost:5000 (ventana 'Datamart-Backend')." -ForegroundColor DarkGray
+    }
     Write-Host ""
     Write-Host "Siguiente:" -ForegroundColor DarkGray
     Write-Host "  .\scripts\almacen.ps1 -List        ver datamarts y estado del almacén" -ForegroundColor DarkGray

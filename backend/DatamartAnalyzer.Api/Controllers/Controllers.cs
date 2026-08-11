@@ -1,4 +1,9 @@
-using DatamartAnalyzer.Api.Models;
+﻿using DatamartAnalyzer.Core.Models;
+using DatamartAnalyzer.Core.Schema;
+using DatamartAnalyzer.Core.Store;
+using DatamartAnalyzer.Core.Prebuilt;
+using DatamartAnalyzer.Core.Sql;
+using DatamartAnalyzer.Core.Rag;
 using DatamartAnalyzer.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -160,7 +165,7 @@ public class AnalyzeController : ControllerBase
             var prebuiltMatch = _prebuilt.Match(request.Pregunta);
             if (prebuiltMatch is not null)
             {
-                var sqlConFiltros = InjectarFiltrosPrebuilt(prebuiltMatch.Sql, request.ContextoVariables);
+                var sqlConFiltros = FilterInjector.Inyectar(prebuiltMatch.Sql, request.ContextoVariables);
                 _logger.LogInformation("Query preconstruida para: {pregunta} | filtros: {f}",
                     request.Pregunta,
                     request.ContextoVariables is { Count: > 0 } ? string.Join(", ", request.ContextoVariables.Keys) : "ninguno");
@@ -223,7 +228,7 @@ public class AnalyzeController : ControllerBase
                 // Verificación post-hoc: si el filtro insumo está activo y la IA
                 // no lo aplicó, lo inyectamos ahora (solo si la SQL hace JOIN a
                 // Insumo; si no, se ignora igual que con los prebuilt).
-                var sqlFinal = InjectarFiltrosPrebuilt(aiResponse.SqlGenerado, request.ContextoVariables);
+                var sqlFinal = FilterInjector.Inyectar(aiResponse.SqlGenerado, request.ContextoVariables);
                 if (!ReferenceEquals(sqlFinal, aiResponse.SqlGenerado) && sqlFinal != aiResponse.SqlGenerado)
                 {
                     _logger.LogInformation("Filtro insumo inyectado post-hoc sobre SQL de IA");
@@ -327,86 +332,8 @@ public class AnalyzeController : ControllerBase
         }
     }
 
-    /// <summary>
-    /// Inyecta filtros de contexto en el SQL (prebuilt o generado por IA).
-    ///
-    /// Filtros sobre Proyecto (empresa, macroproyecto, proyecto, estado):
-    ///   Asumen JOIN a [ADP_DTM_DIM].[Proyecto] con alias "p" y usan IN (...).
-    ///
-    /// Filtro insumo (texto libre):
-    ///   Se aplica como LIKE '%texto%' ESCAPE '\' sobre [Insumo Descripcion],
-    ///   solo si la SQL ya hace JOIN a [ADP_DTM_DIM].[Insumo]. Si la dimensión
-    ///   Insumo no está presente, el filtro se ignora silenciosamente (decisión
-    ///   UX: otras consultas siguen funcionando con el filtro activo).
-    /// </summary>
-    private static string InjectarFiltrosPrebuilt(string sql, Dictionary<string, List<string>>? filtros)
-    {
-        if (filtros is null || filtros.Count == 0) return sql;
-
-        // Mapeo fijo: clave de filtro → columna en la dimensión Proyecto (alias p)
-        var mapColumna = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["proyecto"]      = "Nombre Proyecto",
-            ["macroproyecto"] = "MacroProyecto",
-            ["empresa"]       = "Empresa",
-            ["estado"]        = "Estado",
-        };
-
-        var condiciones = new List<string>();
-        foreach (var (tipo, valores) in filtros)
-        {
-            if (valores is null || valores.Count == 0) continue;
-
-            // ── Filtro especial: insumo (texto, LIKE) ─────────────────────────
-            if (string.Equals(tipo, "insumo", StringComparison.OrdinalIgnoreCase))
-            {
-                // Solo aplicar si la SQL hace JOIN a la dimensión Insumo.
-                // Si la query no la usa (ej. listar proyectos), el filtro se ignora.
-                if (!SqlUsaDimensionInsumo(sql)) continue;
-                var aliasInsumo = DetectarAliasInsumo(sql); // "i" por convención
-
-                foreach (var texto in valores)
-                {
-                    if (string.IsNullOrWhiteSpace(texto)) continue;
-                    // Evitar duplicar si Claude ya incluyó la condición
-                    if (sql.IndexOf("[Insumo Descripcion] LIKE", StringComparison.OrdinalIgnoreCase) >= 0)
-                        continue;
-                    var escaped = EscaparParaLike(texto.Trim());
-                    condiciones.Add($"{aliasInsumo}.[Insumo Descripcion] LIKE '%{escaped}%' ESCAPE '\\'");
-                }
-                continue;
-            }
-
-            // ── Filtros estándar sobre Proyecto (IN) ──────────────────────────
-            if (!mapColumna.TryGetValue(tipo, out var col)) continue;
-            var lista = string.Join(", ", valores.Select(v => $"'{v.Replace("'", "''")}'"));
-            condiciones.Add($"p.[{col}] IN ({lista})");
-        }
-
-        if (condiciones.Count == 0) return sql;
-
-        var clausula = string.Join(" AND ", condiciones);
-
-        // Si ya hay un WHERE, agregar con AND
-        var whereIdx = sql.IndexOf("WHERE", StringComparison.OrdinalIgnoreCase);
-        if (whereIdx >= 0)
-        {
-            // Insertar después del WHERE token y su condición existente
-            var insertPos = whereIdx + "WHERE".Length;
-            return sql[..insertPos] + " " + clausula + " AND" + sql[insertPos..];
-        }
-
-        // Si no hay WHERE, insertar antes del primer GROUP BY u ORDER BY
-        foreach (var keyword in new[] { "GROUP BY", "ORDER BY", "HAVING" })
-        {
-            var idx = sql.IndexOf(keyword, StringComparison.OrdinalIgnoreCase);
-            if (idx >= 0)
-                return sql[..idx] + $"WHERE {clausula}\n                    " + sql[idx..];
-        }
-
-        // Sin GROUP BY ni ORDER BY: agregar al final
-        return sql + $"\nWHERE {clausula}";
-    }
+    // La inyección de filtros vivía acá duplicada. Ahora es Core.Sql.FilterInjector:
+    // la misma regla para la API, el conector MCP y los paneles de dashboard.
 
     /// <summary>
     /// Ejecuta un SQL con inyección de filtros — usado por los paneles del dashboard.
@@ -417,7 +344,7 @@ public class AnalyzeController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.Database) || string.IsNullOrWhiteSpace(request.Sql))
             return BadRequest(new { error = "Se requieren database y sql." });
 
-        var sqlConFiltros = InjectarFiltrosPrebuilt(request.Sql, request.Filtros);
+        var sqlConFiltros = FilterInjector.Inyectar(request.Sql, request.Filtros);
         var result = await _sql.EjecutarQueryAsync(request.Database, sqlConFiltros);
         return Ok(result);
     }
@@ -430,43 +357,8 @@ public class AnalyzeController : ControllerBase
             error.Contains("no es válido")
         );
 
-    // ── Helpers para filtro insumo (texto / LIKE) ─────────────────────────────
-
-    /// <summary>
-    /// ¿La SQL hace referencia a la dimensión Insumo? Cubre notaciones con o
-    /// sin corchetes y tolera espacios variables.
-    /// </summary>
-    private static bool SqlUsaDimensionInsumo(string sql)
-        => System.Text.RegularExpressions.Regex.IsMatch(
-            sql,
-            @"\[?ADP_DTM_DIM\]?\.\[?Insumo\]?\b",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-
-    /// <summary>
-    /// Detecta el alias que la query asigna a la tabla Insumo.
-    /// Convención del proyecto: "i". Si no se puede determinar, se usa "i".
-    /// </summary>
-    private static string DetectarAliasInsumo(string sql)
-    {
-        var match = System.Text.RegularExpressions.Regex.Match(
-            sql,
-            @"\[?ADP_DTM_DIM\]?\.\[?Insumo\]?\s+(?:AS\s+)?(\w+)",
-            System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        return match.Success ? match.Groups[1].Value : "i";
-    }
-
-    /// <summary>
-    /// Escapa una cadena para usar dentro de un patrón LIKE con ESCAPE '\':
-    ///   - \ → \\ (debe ir primero para no doble-escapar)
-    ///   - % → \%
-    ///   - _ → \_
-    ///   - ' → '' (escape SQL estándar para string literal)
-    /// </summary>
-    private static string EscaparParaLike(string s)
-        => s.Replace(@"\", @"\\")
-            .Replace("%", @"\%")
-            .Replace("_", @"\_")
-            .Replace("'", "''");
+    // Los helpers de insumo (detección de la dimensión, alias y escape para LIKE)
+    // se fueron a Core.Sql.FilterInjector / Core.Sql.SqlSafety.
 }
 
 // ─── Filters Controller ───────────────────────────────────────────────────────
@@ -497,17 +389,12 @@ public class FiltersController : ControllerBase
 
         try
         {
-            // Mapeo explícito para filtros conocidos que viven en [ADP_DTM_DIM].[Proyecto]
-            var mapeoExplicito = new Dictionary<string, (string Tabla, string Columna)>(StringComparer.OrdinalIgnoreCase)
+            // El mapa tipo → columna es el MISMO que usa FilterInjector para armar el
+            // WHERE (Core.Sql.FilterCatalog). Si acá ofreciéramos valores de una columna
+            // y allá filtráramos por otra, el desplegable mentiría.
+            if (FilterCatalog.Columnas.TryGetValue(tipo, out var columna))
             {
-                ["proyecto"]      = ("[ADP_DTM_DIM].[Proyecto]", "Nombre Proyecto"),
-                ["macroproyecto"] = ("[ADP_DTM_DIM].[Proyecto]", "MacroProyecto"),
-                ["empresa"]       = ("[ADP_DTM_DIM].[Proyecto]", "Empresa"),
-                ["estado"]        = ("[ADP_DTM_DIM].[Proyecto]", "Estado"),
-            };
-
-            if (mapeoExplicito.TryGetValue(tipo, out var mapeo))
-            {
+                var mapeo = (Tabla: FilterCatalog.TablaProyecto, Columna: columna);
                 var esMacro     = tipo.Equals("macroproyecto", StringComparison.OrdinalIgnoreCase);
                 var esProyecto  = tipo.Equals("proyecto",      StringComparison.OrdinalIgnoreCase);
 

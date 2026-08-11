@@ -10,6 +10,14 @@ backend/DatamartAnalyzer.Api/appsettings.Production.json
 *.suo
 .vs/
 
+# ─── Conector MCP (paquete .mcpb) ─────────────────────────────────────────────
+# Se versiona manifest.json y el icono; lo demas es salida del build.
+# connector/server/ son ~84 MB de publish self-contained y dist/ el .mcpb armado.
+connector/build/
+connector/server/
+connector/icon.png
+dist/
+
 # ─── Frontend ─────────────────────────────────────────────────────────────────
 frontend/node_modules/
 frontend/dist/

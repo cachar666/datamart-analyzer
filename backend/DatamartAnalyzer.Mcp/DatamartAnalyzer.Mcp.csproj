@@ -1,0 +1,34 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>DatamartAnalyzer.Mcp</RootNamespace>
+
+    <!-- OJO: InvariantGlobalization NO puede estar en true. Microsoft.Data.SqlClient
+         falla al abrir la conexion con "Globalization Invariant Mode is not supported"
+         porque necesita ICU para las colaciones (el datamart es Modern_Spanish_CI_AS).
+         Se ve recien al ejecutar la primera consulta, no al compilar. -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+
+    <!-- Los mensajes de error de SqlClient en 9 idiomas pesan ~2 MB en el paquete
+         self-contained. El conector es para usuarios de habla hispana; el resto sobra. -->
+    <SatelliteResourceLanguages>es</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ModelContextProtocol" Version="2.1.0" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.0" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Modo SQL directo: el conector no siempre tiene una API adelante. Core trae
+         la barrera de seguridad, el inyector de filtros, el almacen, los prebuilt y
+         el corpus del ERP embebido — las mismas reglas que aplica la API. -->
+    <ProjectReference Include="..\DatamartAnalyzer.Core\DatamartAnalyzer.Core.csproj" />
+  </ItemGroup>
+
+</Project>

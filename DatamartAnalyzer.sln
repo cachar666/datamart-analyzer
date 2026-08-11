@@ -8,6 +8,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "backend", "backend", "{1AE8
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DatamartAnalyzer.Migrations", "backend\DatamartAnalyzer.Migrations\DatamartAnalyzer.Migrations.csproj", "{D5F5AE00-5AE9-4B76-BC35-A469B77CC6B5}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DatamartAnalyzer.Mcp", "backend\DatamartAnalyzer.Mcp\DatamartAnalyzer.Mcp.csproj", "{13DA8027-22AE-4D19-AE51-8FB1F0BDD06D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "DatamartAnalyzer.Core", "backend\DatamartAnalyzer.Core\DatamartAnalyzer.Core.csproj", "{E5610487-8FB8-40E5-85F2-B3C47976BF26}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -42,11 +46,37 @@ Global
 		{D5F5AE00-5AE9-4B76-BC35-A469B77CC6B5}.Release|x64.Build.0 = Release|Any CPU
 		{D5F5AE00-5AE9-4B76-BC35-A469B77CC6B5}.Release|x86.ActiveCfg = Release|Any CPU
 		{D5F5AE00-5AE9-4B76-BC35-A469B77CC6B5}.Release|x86.Build.0 = Release|Any CPU
+		{13DA8027-22AE-4D19-AE51-8FB1F0BDD06D}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{13DA8027-22AE-4D19-AE51-8FB1F0BDD06D}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{13DA8027-22AE-4D19-AE51-8FB1F0BDD06D}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{13DA8027-22AE-4D19-AE51-8FB1F0BDD06D}.Debug|x64.Build.0 = Debug|Any CPU
+		{13DA8027-22AE-4D19-AE51-8FB1F0BDD06D}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{13DA8027-22AE-4D19-AE51-8FB1F0BDD06D}.Debug|x86.Build.0 = Debug|Any CPU
+		{13DA8027-22AE-4D19-AE51-8FB1F0BDD06D}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{13DA8027-22AE-4D19-AE51-8FB1F0BDD06D}.Release|Any CPU.Build.0 = Release|Any CPU
+		{13DA8027-22AE-4D19-AE51-8FB1F0BDD06D}.Release|x64.ActiveCfg = Release|Any CPU
+		{13DA8027-22AE-4D19-AE51-8FB1F0BDD06D}.Release|x64.Build.0 = Release|Any CPU
+		{13DA8027-22AE-4D19-AE51-8FB1F0BDD06D}.Release|x86.ActiveCfg = Release|Any CPU
+		{13DA8027-22AE-4D19-AE51-8FB1F0BDD06D}.Release|x86.Build.0 = Release|Any CPU
+		{E5610487-8FB8-40E5-85F2-B3C47976BF26}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E5610487-8FB8-40E5-85F2-B3C47976BF26}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E5610487-8FB8-40E5-85F2-B3C47976BF26}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{E5610487-8FB8-40E5-85F2-B3C47976BF26}.Debug|x64.Build.0 = Debug|Any CPU
+		{E5610487-8FB8-40E5-85F2-B3C47976BF26}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{E5610487-8FB8-40E5-85F2-B3C47976BF26}.Debug|x86.Build.0 = Debug|Any CPU
+		{E5610487-8FB8-40E5-85F2-B3C47976BF26}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E5610487-8FB8-40E5-85F2-B3C47976BF26}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E5610487-8FB8-40E5-85F2-B3C47976BF26}.Release|x64.ActiveCfg = Release|Any CPU
+		{E5610487-8FB8-40E5-85F2-B3C47976BF26}.Release|x64.Build.0 = Release|Any CPU
+		{E5610487-8FB8-40E5-85F2-B3C47976BF26}.Release|x86.ActiveCfg = Release|Any CPU
+		{E5610487-8FB8-40E5-85F2-B3C47976BF26}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 		{D5F5AE00-5AE9-4B76-BC35-A469B77CC6B5} = {1AE8ACA6-933B-BF2A-3671-3E2EAC007D16}
+		{13DA8027-22AE-4D19-AE51-8FB1F0BDD06D} = {1AE8ACA6-933B-BF2A-3671-3E2EAC007D16}
+		{E5610487-8FB8-40E5-85F2-B3C47976BF26} = {1AE8ACA6-933B-BF2A-3671-3E2EAC007D16}
 	EndGlobalSection
 EndGlobal

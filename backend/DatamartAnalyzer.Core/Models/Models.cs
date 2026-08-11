@@ -1,4 +1,4 @@
-namespace DatamartAnalyzer.Api.Models;
+namespace DatamartAnalyzer.Core.Models;
 
 // ─── Schema / Metadata ────────────────────────────────────────────────────────
 

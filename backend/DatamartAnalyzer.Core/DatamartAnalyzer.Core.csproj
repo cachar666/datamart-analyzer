@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>DatamartAnalyzer.Core</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Dapper" Version="2.1.35" />
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="5.2.2" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- La API hereda ILogger del SDK Web; Core no. Se declara global para que los
+         archivos movidos desde la API sigan compilando sin tocar sus usings. -->
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- El corpus de negocio del ERP viaja EMBEBIDO: el conector se instala en la
+         maquina del usuario final, donde no existe la carpeta docs\ del repo.
+         Misma fuente que usa la API, un solo archivo. -->
+    <EmbeddedResource Include="..\..\docs\contexto-erp.md">
+      <LogicalName>DatamartAnalyzer.Core.contexto-erp.md</LogicalName>
+    </EmbeddedResource>
+
+    <!-- Scripts de migracion del almacen, tambien embebidos y con el mismo
+         LogicalName que usa DbUp, para que los tres caminos compartan journal. -->
+    <EmbeddedResource Include="..\DatamartAnalyzer.Migrations\Scripts\*.sql">
+      <LogicalName>DatamartAnalyzer.Migrations.Scripts.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+  </ItemGroup>
+
+</Project>

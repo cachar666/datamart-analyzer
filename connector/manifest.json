@@ -1,0 +1,90 @@
+{
+  "manifest_version": "0.3",
+  "name": "datamart-analyzer-adpro",
+  "display_name": "Datamart ADPRO",
+  "version": "1.0.0",
+  "description": "Pregunta en espanol sobre el datamart de ADPRO / SincoERP, guarda tus consultas y arma tus dashboards.",
+  "long_description": "Conecta Claude con el datamart de ADPRO (SincoERP) para consultar la informacion de tus proyectos de construccion en lenguaje natural: presupuesto contra ejecutado, compras, inventarios, contratos y avance de obra.\n\nTrae el contexto de negocio del ERP incorporado, asi que entiende como se arma la informacion (clases de origen, dimensiones, llaves de fecha) sin que tengas que explicarselo.\n\nLo que preguntes se puede guardar como consulta favorita y agrupar en dashboards, que quedan almacenados dentro del propio datamart. Eso significa que los ves igual desde Claude que desde la aplicacion web.\n\nSolo lectura: nunca modifica ni borra informacion del datamart.",
+  "author": {
+    "name": "SINCOSOFT S.A.S.",
+    "url": "https://sinco.co"
+  },
+  "icon": "icon.png",
+  "keywords": [
+    "adpro",
+    "sincoerp",
+    "datamart",
+    "construccion",
+    "proyectos",
+    "sql"
+  ],
+  "license": "Propietario - SINCOSOFT S.A.S.",
+  "compatibility": {
+    "claude_desktop": ">=0.10.0",
+    "platforms": ["win32"]
+  },
+  "server": {
+    "type": "binary",
+    "entry_point": "server/DatamartAnalyzer.Mcp.exe",
+    "mcp_config": {
+      "command": "${__dirname}/server/DatamartAnalyzer.Mcp.exe",
+      "args": [],
+      "env": {
+        "DATAMART_SERVIDOR": "${user_config.servidor}",
+        "DATAMART_BASE": "${user_config.base_datos}",
+        "DATAMART_USUARIO": "${user_config.usuario}",
+        "DATAMART_CLAVE": "${user_config.clave}"
+      }
+    }
+  },
+  "user_config": {
+    "servidor": {
+      "type": "string",
+      "title": "Servidor SQL",
+      "description": "Tal como te lo entregaron, con el puerto si lo tiene. Ejemplo: datamart.sincoerp.com,4263",
+      "required": true
+    },
+    "base_datos": {
+      "type": "string",
+      "title": "Base Datos",
+      "description": "Nombre del datamart. Ejemplo: SincoComercial_NuevaDW",
+      "required": true
+    },
+    "usuario": {
+      "type": "string",
+      "title": "Usuario (opcional)",
+      "description": "Usuario de SQL Server, si te entregaron uno. Ejemplo: UsuSincoComercial_NuevaDW. Si lo dejas VACIO, la conexion se hace con tu propio usuario de Windows.",
+      "required": false
+    },
+    "clave": {
+      "type": "string",
+      "title": "Clave (opcional)",
+      "description": "La clave del usuario de SQL Server. Queda guardada de forma segura en tu equipo y no se comparte con nadie. Dejala vacia si dejaste el usuario vacio: ahi se usa tu usuario de Windows.",
+      "required": false,
+      "sensitive": true
+    }
+  },
+  "tools": [
+    { "name": "estado", "description": "Contra que datamart esta trabajando y si el almacen de consultas y dashboards esta listo." },
+    { "name": "listar_datamarts", "description": "Datamarts disponibles para esta configuracion." },
+    { "name": "usar_datamart", "description": "Fija el datamart de la conversacion." },
+    { "name": "describir_datamart", "description": "Tablas de hechos, dimensiones y vistas con sus campos." },
+    { "name": "preguntar", "description": "Pregunta en lenguaje natural sobre el datamart." },
+    { "name": "ejecutar_sql", "description": "Ejecuta un SELECT. Solo lectura." },
+    { "name": "listar_consultas", "description": "Consultas guardadas, con busqueda por texto o etiquetas." },
+    { "name": "guardar_consulta", "description": "Guarda una consulta como favorita." },
+    { "name": "borrar_consulta", "description": "Borra una consulta guardada." },
+    { "name": "ejecutar_consulta", "description": "Ejecuta una consulta guardada." },
+    { "name": "listar_dashboards", "description": "Dashboards guardados y cuantos paneles tiene cada uno." },
+    { "name": "ver_dashboard", "description": "Detalle de un dashboard y sus paneles." },
+    { "name": "crear_dashboard", "description": "Crea un dashboard." },
+    { "name": "borrar_dashboard", "description": "Borra un dashboard y sus paneles." },
+    { "name": "renombrar_dashboard", "description": "Cambia nombre o descripcion de un dashboard." },
+    { "name": "agregar_panel", "description": "Agrega un panel a un dashboard." },
+    { "name": "quitar_panel", "description": "Quita un panel de un dashboard." },
+    { "name": "ejecutar_dashboard", "description": "Ejecuta todos los paneles y devuelve sus datos." },
+    { "name": "listar_valores_filtro", "description": "Valores disponibles de empresa, macroproyecto, proyecto o estado." },
+    { "name": "fijar_filtros", "description": "Fija los filtros globales de la conversacion." },
+    { "name": "limpiar_filtros", "description": "Quita los filtros globales." }
+  ]
+}

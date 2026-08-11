@@ -1,5 +1,6 @@
 using Dapper;
-using DatamartAnalyzer.Api.Models;
+using DatamartAnalyzer.Core.Models;
+using DatamartAnalyzer.Core.Sql;
 using Microsoft.Data.SqlClient;
 
 namespace DatamartAnalyzer.Api.Services;
@@ -18,8 +19,8 @@ public class SqlServerService : ISqlServerService
 {
     private readonly string _baseConnectionString;
     private readonly int _timeoutSeconds;
-    private readonly int _maxRows;
     private readonly IDatamartConnectionResolver _conexiones;
+    private readonly ISqlExecutor _executor;
     private readonly ILogger<SqlServerService> _logger;
 
     private List<DatabaseInfo>? _cachedDatabases;
@@ -34,13 +35,13 @@ public class SqlServerService : ISqlServerService
     };
 
     public SqlServerService(IConfiguration config, IDatamartConnectionResolver conexiones,
-                            ILogger<SqlServerService> logger)
+                            ISqlExecutor executor, ILogger<SqlServerService> logger)
     {
         _conexiones = conexiones;
+        _executor = executor;
         _baseConnectionString = config.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
         _timeoutSeconds = config.GetValue("QuerySettings:TimeoutSeconds", 30);
-        _maxRows = config.GetValue("QuerySettings:MaxRows", 5000);
         _logger = logger;
     }
 
@@ -202,76 +203,11 @@ public class SqlServerService : ISqlServerService
         }
     }
 
-    public async Task<QueryResponse> EjecutarQueryAsync(string database, string sql)
-    {
-        // Validación de seguridad: solo SELECT
-        var sqlTrimmed = sql.Trim();
-        if (!sqlTrimmed.StartsWith("SELECT", StringComparison.OrdinalIgnoreCase)
-            && !sqlTrimmed.StartsWith("WITH", StringComparison.OrdinalIgnoreCase))
-        {
-            return new QueryResponse(false, null, 0, "Solo se permiten consultas SELECT.", 0);
-        }
-
-        // Palabras clave peligrosas
-        var keywords = new[] { "INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "TRUNCATE", "EXEC", "EXECUTE", "SP_" };
-        foreach (var kw in keywords)
-        {
-            if (sqlTrimmed.Contains(kw, StringComparison.OrdinalIgnoreCase))
-                return new QueryResponse(false, null, 0, $"Operación no permitida: {kw}", 0);
-        }
-
-        // Agregar TOP si no tiene LIMIT/TOP
-        if (!sqlTrimmed.Contains("TOP ", StringComparison.OrdinalIgnoreCase)
-            && !sqlTrimmed.Contains("FETCH NEXT", StringComparison.OrdinalIgnoreCase))
-        {
-            // Insertar TOP después de SELECT [DISTINCT], no entre SELECT y DISTINCT
-            var selectIdx = sqlTrimmed.IndexOf("SELECT", StringComparison.OrdinalIgnoreCase) + 6;
-            var afterSelect = sqlTrimmed[selectIdx..].TrimStart();
-            var insertAt = selectIdx + (sqlTrimmed[selectIdx..].Length - afterSelect.Length);
-            if (afterSelect.StartsWith("DISTINCT", StringComparison.OrdinalIgnoreCase))
-                insertAt += "DISTINCT".Length;
-            sqlTrimmed = sqlTrimmed.Insert(insertAt, $" TOP {_maxRows}");
-        }
-
-        var sw = System.Diagnostics.Stopwatch.StartNew();
-        try
-        {
-            await using var conn = new SqlConnection(await _conexiones.ResolverAsync(database));
-            await conn.OpenAsync();
-
-            using var cmd = new SqlCommand(sqlTrimmed, conn)
-            {
-                CommandTimeout = _timeoutSeconds
-            };
-
-            using var reader = await cmd.ExecuteReaderAsync();
-
-            var columnas = Enumerable.Range(0, reader.FieldCount)
-                .Select(i => reader.GetName(i))
-                .ToList();
-
-            var filas = new List<Dictionary<string, object?>>();
-
-            while (await reader.ReadAsync())
-            {
-                var fila = new Dictionary<string, object?>();
-                for (int i = 0; i < reader.FieldCount; i++)
-                    fila[columnas[i]] = reader.IsDBNull(i) ? null : reader.GetValue(i);
-
-                filas.Add(fila);
-            }
-
-            sw.Stop();
-            _logger.LogInformation("Query ejecutada en {database}: {filas} filas en {ms}ms",
-                database, filas.Count, sw.ElapsedMilliseconds);
-
-            return new QueryResponse(true, filas, filas.Count, null, sw.Elapsed.TotalMilliseconds);
-        }
-        catch (Exception ex)
-        {
-            sw.Stop();
-            _logger.LogError(ex, "Error ejecutando query en {database}", database);
-            return new QueryResponse(false, null, 0, ex.Message, sw.Elapsed.TotalMilliseconds);
-        }
-    }
+    /// <summary>
+    /// Delega en Core.Sql.SqlExecutor. Los filtros ya vienen inyectados por quien
+    /// llama —el controlador necesita el SQL final como texto para devolvérselo al
+    /// usuario— asi que aca no se vuelven a inyectar.
+    /// </summary>
+    public Task<QueryResponse> EjecutarQueryAsync(string database, string sql) =>
+        _executor.EjecutarAsync(database, sql);
 }

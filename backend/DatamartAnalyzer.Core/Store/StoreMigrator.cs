@@ -2,9 +2,10 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Text.RegularExpressions;
 using Dapper;
+using DatamartAnalyzer.Core.Models;
 using Microsoft.Data.SqlClient;
 
-namespace DatamartAnalyzer.Api.Services;
+namespace DatamartAnalyzer.Core.Store;
 
 /// <summary>
 /// Instala el almacén (esquema ADP_DTM_APP) en un datamart que todavía no lo tiene,
@@ -42,7 +43,7 @@ public class StoreMigrator : IStoreMigrator
     private const string Schema = StoreRepository.Schema;   // ADP_DTM_APP
     private const string TablaJournal = "SchemaVersions";
 
-    private readonly IDatamartConnectionResolver _conexiones;
+    private readonly IConexionDatamart _conexiones;
     private readonly ILogger<StoreMigrator> _logger;
 
     /// <summary>Bases ya verificadas en esta ejecución: evita ir a la BD en cada request.</summary>
@@ -55,7 +56,7 @@ public class StoreMigrator : IStoreMigrator
     private static readonly Regex SeparadorLotes =
         new(@"^\s*GO\s*$", RegexOptions.IgnoreCase | RegexOptions.Multiline | RegexOptions.Compiled);
 
-    public StoreMigrator(IDatamartConnectionResolver conexiones, ILogger<StoreMigrator> logger)
+    public StoreMigrator(IConexionDatamart conexiones, ILogger<StoreMigrator> logger)
     {
         _conexiones = conexiones;
         _logger = logger;

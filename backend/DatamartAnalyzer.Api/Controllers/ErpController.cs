@@ -1,4 +1,4 @@
-using DatamartAnalyzer.Api.Models;
+using DatamartAnalyzer.Core.Models;
 using DatamartAnalyzer.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 

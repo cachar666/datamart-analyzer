@@ -1,6 +1,6 @@
 using System.Text.RegularExpressions;
 using Dapper;
-using DatamartAnalyzer.Api.Models;
+using DatamartAnalyzer.Core.Models;
 using Microsoft.Data.SqlClient;
 
 namespace DatamartAnalyzer.Api.Services;

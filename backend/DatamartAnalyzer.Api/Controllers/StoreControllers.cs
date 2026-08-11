@@ -1,4 +1,7 @@
-using DatamartAnalyzer.Api.Models;
+using DatamartAnalyzer.Core.Models;
+using DatamartAnalyzer.Core.Store;
+using DatamartAnalyzer.Core.Prebuilt;
+using DatamartAnalyzer.Core.Rag;
 using DatamartAnalyzer.Api.Services;
 using Microsoft.AspNetCore.Mvc;
 
@@ -39,20 +42,52 @@ public abstract class StoreControllerBase : ControllerBase
         if (string.IsNullOrWhiteSpace(database))
             return BadRequest(new { error = "Se requiere el nombre de la base de datos." });
 
-        // EsAlcanzableAsync y no "existe en YOSEMITE": en modo ERP el datamart puede
-        // vivir en otro servidor, y el catálogo local no sabe nada de él.
-        if (!await _conexiones.EsAlcanzableAsync(database))
-            return NotFound(new
+        // Antes esto abría DOS conexiones antes de hacer nada: una para preguntar si
+        // el servidor respondía y otra para ver si el almacén estaba. Pero abrir la
+        // segunda YA responde la primera — si conecta, es alcanzable. Contra YOSEMITE
+        // el viaje de más es barato; contra un datamart remoto con 40 ms de ida y
+        // vuelta se paga en cada request del almacén.
+        var (alcanzable, instalado, errorConexion) = await Store.VerificarAlmacenAsync(database);
+
+        if (!alcanzable)
+        {
+            // No se pudo ni abrir la conexión: eso es "no llego", no "falta instalar".
+            // Mandar a alguien a correr el script de instalación acá sería mandarlo a
+            // perder el tiempo contra un servidor que no responde.
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
             {
                 error = $"No se pudo conectar al datamart '{database}'.",
-                servidor = await _conexiones.ServidorDeAsync(database)
+                detalle = errorConexion,
+                servidor = await _conexiones.ServidorDeAsync(database),
+                sugerencia = "Revisá que el servidor sea alcanzable desde donde corre la API " +
+                             "(firewall, VPN, puerto) y que las credenciales sean correctas."
             });
+        }
 
-        if (await Store.HayAlmacenAsync(database)) return null;
+        if (instalado)
+        {
+            // El almacén está, pero puede estar VIEJO: HayAlmacenAsync sólo mira las
+            // cuatro tablas originales, así que un script nuevo (una tabla agregada
+            // en una versión posterior) lo daba por instalado y el endpoint reventaba
+            // con 500 al tocar algo que todavía no existía.
+            //
+            // Aplicar scripts pendientes sobre un almacén YA instalado es distinto de
+            // crearlo de cero: no hay decisión que consultarle a nadie, y no hacerlo
+            // deja la API rota. Es idempotente y se cachea por proceso.
+            var (alDia, errorUpgrade) = await _migrador.AsegurarInstaladoAsync(database);
+            if (alDia) return null;
 
-        // Modo ERP: el datamart lo dicta dbo.ADPConfig y es EL de esta instalación,
-        // así que se instala solo al primer uso. En standalone no se toca nada sin
-        // pedirlo: ahí manda scripts/almacen.ps1.
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
+            {
+                error = $"El almacén de '{database}' quedó desactualizado y no se pudo poner al día.",
+                detalle = errorUpgrade,
+                solucion = $"scripts\\almacen.ps1 -Database {database}"
+            });
+        }
+
+        // Instalar de CERO es otra cosa. En modo ERP el datamart lo dicta
+        // dbo.ADPConfig y es EL de esta instalación, así que se crea al primer uso.
+        // En standalone no se toca una base sin pedirlo: ahí manda almacen.ps1.
         if (_conexiones.ModoErp)
         {
             var (ok, error) = await _migrador.AsegurarInstaladoAsync(database);
@@ -71,6 +106,132 @@ public abstract class StoreControllerBase : ControllerBase
             error = $"El almacén no está instalado en '{database}'.",
             solucion = $"scripts\\almacen.ps1 -Database {database}"
         });
+    }
+}
+
+// ─── Preguntas sugeridas ──────────────────────────────────────────────────────
+
+/// <summary>
+/// El catálogo de preguntas sugeridas. Vivía hardcodeado en App.jsx y el contador
+/// de usos en el localStorage del navegador; ahora vive en el datamart, así lo ven
+/// igual la aplicación web y el conector MCP.
+/// </summary>
+[ApiController]
+[Route("api/[controller]")]
+public class SuggestedQuestionsController : StoreControllerBase
+{
+    public SuggestedQuestionsController(
+        IStoreRepository store, IDatamartConnectionResolver conexiones, IStoreMigrator migrador)
+        : base(store, conexiones, migrador) { }
+
+    /// <summary>Catálogo. Sin ocultas salvo que se pidan explícitamente.</summary>
+    [HttpGet("{database}")]
+    public async Task<IActionResult> Listar(
+        string database, [FromQuery] string? modulo, [FromQuery] bool incluirOcultas = false)
+        => await ValidarAsync(database)
+           ?? Ok(await Store.ListarSugeridasAsync(database, modulo, incluirOcultas));
+
+    [HttpPost("{database}")]
+    public async Task<IActionResult> Crear(string database, [FromBody] CreateSuggestedQuestionRequest req)
+    {
+        if (await ValidarAsync(database) is { } error) return error;
+
+        try
+        {
+            var creada = await Store.CrearSugeridaAsync(database, req);
+            return CreatedAtAction(nameof(Listar), new { database }, creada);
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Actualiza. De una del sistema sólo se pueden cambiar Activa y Orden — el
+    /// repositorio devuelve 409 y explica por qué si se intenta editar su texto.
+    /// </summary>
+    [HttpPut("{database}/{id:guid}")]
+    public async Task<IActionResult> Actualizar(
+        string database, Guid id, [FromBody] UpdateSuggestedQuestionRequest req)
+    {
+        if (await ValidarAsync(database) is { } error) return error;
+
+        try
+        {
+            var actualizada = await Store.ActualizarSugeridaAsync(database, id, req);
+            return actualizada is null
+                ? NotFound(new { error = "Pregunta no encontrada." })
+                : Ok(actualizada);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message });
+        }
+    }
+
+    /// <summary>Borra una del usuario. Las del sistema se ocultan, no se borran.</summary>
+    [HttpDelete("{database}/{id:guid}")]
+    public async Task<IActionResult> Borrar(string database, Guid id)
+    {
+        if (await ValidarAsync(database) is { } error) return error;
+
+        try
+        {
+            return await Store.BorrarSugeridaAsync(database, id)
+                ? NoContent()
+                : NotFound(new { error = "Pregunta no encontrada." });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(new { error = ex.Message, solucion = "Ocultala con Activa = false." });
+        }
+    }
+
+    // ── Categorías ───────────────────────────────────────────────────────────
+
+    [HttpGet("{database}/categorias")]
+    public async Task<IActionResult> ListarCategorias(string database, [FromQuery] string? modulo)
+        => await ValidarAsync(database) ?? Ok(await Store.ListarCategoriasAsync(database, modulo));
+
+    [HttpPost("{database}/categorias")]
+    public async Task<IActionResult> CrearCategoria(
+        string database, [FromBody] CreateSuggestedCategoryRequest req)
+    {
+        if (await ValidarAsync(database) is { } error) return error;
+
+        try { return Ok(await Store.CrearCategoriaAsync(database, req)); }
+        catch (ArgumentException ex) { return BadRequest(new { error = ex.Message }); }
+        catch (InvalidOperationException ex) { return Conflict(new { error = ex.Message }); }
+    }
+
+    /// <summary>
+    /// Borra una categoría propia. Las del sistema no se borran, y una que todavía
+    /// tenga preguntas tampoco: quedarían apuntando a algo inexistente.
+    /// </summary>
+    [HttpDelete("{database}/categorias/{id:guid}")]
+    public async Task<IActionResult> BorrarCategoria(string database, Guid id)
+    {
+        if (await ValidarAsync(database) is { } error) return error;
+
+        try
+        {
+            return await Store.BorrarCategoriaAsync(database, id)
+                ? NoContent()
+                : NotFound(new { error = "Categoría no encontrada." });
+        }
+        catch (InvalidOperationException ex) { return Conflict(new { error = ex.Message }); }
+    }
+
+    /// <summary>Registra que alguien la usó. Alimenta el Top del equipo y el propio.</summary>
+    [HttpPost("{database}/{id:guid}/uso")]
+    public async Task<IActionResult> RegistrarUso(string database, Guid id)
+    {
+        if (await ValidarAsync(database) is { } error) return error;
+
+        return await Store.RegistrarUsoSugeridaAsync(database, id)
+            ? NoContent()
+            : NotFound(new { error = "Pregunta no encontrada." });
     }
 }
 
@@ -323,10 +484,12 @@ public class StoreController : ControllerBase
         // EsAlcanzableAsync y no "existe en YOSEMITE": en modo ERP el datamart puede
         // vivir en otro servidor, y el catálogo local no sabe nada de él.
         if (!await _conexiones.EsAlcanzableAsync(database))
-            return NotFound(new
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
             {
                 error = $"No se pudo conectar al datamart '{database}'.",
-                servidor = await _conexiones.ServidorDeAsync(database)
+                servidor = await _conexiones.ServidorDeAsync(database),
+                sugerencia = "Revisá que el servidor sea alcanzable desde donde corre la API " +
+                             "(firewall, VPN, puerto) y que las credenciales sean correctas."
             });
 
         return Ok(await _store.EstadoAsync(database));
@@ -342,10 +505,12 @@ public class StoreController : ControllerBase
         // EsAlcanzableAsync y no "existe en YOSEMITE": en modo ERP el datamart puede
         // vivir en otro servidor, y el catálogo local no sabe nada de él.
         if (!await _conexiones.EsAlcanzableAsync(database))
-            return NotFound(new
+            return StatusCode(StatusCodes.Status503ServiceUnavailable, new
             {
                 error = $"No se pudo conectar al datamart '{database}'.",
-                servidor = await _conexiones.ServidorDeAsync(database)
+                servidor = await _conexiones.ServidorDeAsync(database),
+                sugerencia = "Revisá que el servidor sea alcanzable desde donde corre la API " +
+                             "(firewall, VPN, puerto) y que las credenciales sean correctas."
             });
 
         if (!await _store.HayAlmacenAsync(database))

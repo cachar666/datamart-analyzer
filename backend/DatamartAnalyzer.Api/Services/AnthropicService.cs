@@ -1,7 +1,11 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using DatamartAnalyzer.Api.Models;
+using DatamartAnalyzer.Core.Models;
+using DatamartAnalyzer.Core.Store;
+using DatamartAnalyzer.Core.Prebuilt;
+using DatamartAnalyzer.Core.Rag;
+using DatamartAnalyzer.Core.Sql;
 
 namespace DatamartAnalyzer.Api.Services;
 
@@ -277,7 +281,7 @@ public class AnthropicService : IAnthropicService
                         foreach (var texto in kv.Value)
                         {
                             if (string.IsNullOrWhiteSpace(texto)) continue;
-                            var escaped = texto.Replace("'", "''");
+                            var escaped = SqlSafety.EscaparLiteral(texto);
                             sb.AppendLine(
                                 $"- insumo → [ADP_DTM_DIM].[Insumo].[Insumo Descripcion] LIKE '%{escaped}%' " +
                                 "(aplica solo si la consulta involucra la dimensión Insumo; si no, IGNORA este filtro " +
@@ -286,7 +290,7 @@ public class AnthropicService : IAnthropicService
                         continue;
                     }
 
-                    var vals = string.Join(", ", kv.Value.Select(v => $"'{v}'"));
+                    var vals = string.Join(", ", kv.Value.Select(v => $"'{SqlSafety.EscaparLiteral(v)}'"));
                     if (request.FilterMeta != null && request.FilterMeta.TryGetValue(kv.Key, out var meta))
                         sb.AppendLine($"- {kv.Key} → {meta.Tabla}.[{meta.Columna}] IN ({vals})");
                     else

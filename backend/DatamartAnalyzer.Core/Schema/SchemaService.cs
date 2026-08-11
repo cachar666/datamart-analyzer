@@ -1,8 +1,9 @@
-using Dapper;
-using DatamartAnalyzer.Api.Models;
+﻿using Dapper;
+using DatamartAnalyzer.Core.Models;
+using DatamartAnalyzer.Core.Store;
 using Microsoft.Data.SqlClient;
 
-namespace DatamartAnalyzer.Api.Services;
+namespace DatamartAnalyzer.Core.Schema;
 
 public interface ISchemaService
 {
@@ -13,21 +14,21 @@ public interface ISchemaService
 
 public class SchemaService : ISchemaService
 {
-    private readonly IDatamartConnectionResolver _conexiones;
+    private readonly IConexionDatamart _conexiones;
     private readonly ILogger<SchemaService> _logger;
 
     // Cache simple en memoria por base de datos
     private readonly Dictionary<string, (SchemaContext Contexto, DateTime CachedAt)> _cache = new();
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(10);
 
-    public SchemaService(IDatamartConnectionResolver conexiones, ILogger<SchemaService> logger)
+    public SchemaService(IConexionDatamart conexiones, ILogger<SchemaService> logger)
     {
         _conexiones = conexiones;
         _logger = logger;
     }
 
     /// <summary>
-    /// La conexion la decide IDatamartConnectionResolver: el datamart puede vivir en
+    /// La conexion la decide IConexionDatamart: el datamart puede vivir en
     /// otro servidor y con otras credenciales que DefaultConnection.
     /// </summary>
     private Task<string> ConexionAsync(string database) => _conexiones.ResolverAsync(database);
