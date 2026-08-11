@@ -1,170 +1,84 @@
-# Datamart Analyzer — Instrucciones para Claude Code
+# Datamart Analyzer — conector MCP
 
-## Descripción del Proyecto
+Permite consultar datamarts de ADPRO/SincoERP en lenguaje natural. Este repo es
+hoy, sobre todo, **el conector para Claude Desktop**: el backend y el frontend ya
+se integraron al ERP y viven en Azure DevOps.
 
-Aplicación fullstack que permite a usuarios analizar datamarts de ERP (ADPRO/SincoERP) mediante lenguaje natural, con soporte de IA (Anthropic Claude). El sistema se conecta al servidor SQL Server **[YOSEMITE]** con autenticación de Windows, lee la estructura de hechos y dimensiones desde la vista `ADP_DTM_VCONF.DefinicionesCamposTabla`, y responde preguntas del usuario con consultas SQL, gráficos, texto o combinaciones.
+| Pieza | Dónde |
+|---|---|
+| Conector MCP + su Core | acá |
+| Backend | `ADPRO.Core.API`, rama `Feature_VisualizadorDM`, en `Features/DatamartAnalyzer` |
+| Frontend | `ADPRO.Informes`, rama `DatamartAnalyzer`, en `src/pages/datamart` |
 
-## Arquitectura
+`backend/DatamartAnalyzer.Api` y `frontend/` siguen acá como **referencia del
+original**. No son lo que corre en el ERP.
+
+## Estructura
 
 ```
-datamart-analyzer/
-├── backend/   → ASP.NET Core 8 Web API (C#)
-└── frontend/  → React + Vite (SPA)
+backend/
+  DatamartAnalyzer.Core/         Sql, Schema, Store, Rag, Prebuilt, Charts, Models
+  DatamartAnalyzer.Mcp/          el conector (stdio, ModelContextProtocol 2.1.0)
+  DatamartAnalyzer.Migrations/   scripts .sql del esquema ADP_DTM_APP
+  DatamartAnalyzer.Api/          referencia del original (controllers MVC)
+connector/manifest.json          manifiesto del paquete .mcpb
+scripts/empaquetar-conector.ps1  arma el .mcpb (win y mac)
+scripts/permisos-mcpb.js         permisos Unix del zip, necesario en macOS
+sql/declarar-datamart.sql        declara el datamart en dbo.ADPConfig del ERP
+docs/contexto-erp.md             corpus de negocio (RAG), viaja embebido
 ```
 
-## Stack Tecnológico
+## Empaquetar
 
-- **Backend**: C# / ASP.NET Core 8 / Entity Framework Core / Dapper
-- **Base de datos**: SQL Server en servidor YOSEMITE (Windows Authentication)
-- **Frontend**: React 18 + Vite + Tailwind CSS + Recharts
-- **IA**: Anthropic Claude API (claude-sonnet-4-20250514)
-
-## Configuración Inicial
-
-### 1. Variables de Entorno (Backend)
-
-Crear archivo `backend/DatamartAnalyzer.Api/appsettings.Development.json`:
-
-```json
-{
-  "ConnectionStrings": {
-    "DefaultConnection": "Server=YOSEMITE;Integrated Security=True;TrustServerCertificate=True;"
-  },
-  "Anthropic": {
-    "ApiKey": "TU_API_KEY_AQUI",
-    "Model": "claude-sonnet-4-20250514",
-    "MaxTokens": 4096
-  },
-  "Cors": {
-    "AllowedOrigins": ["http://localhost:5173"]
-  }
-}
+```
+powershell -ExecutionPolicy Bypass -File scripts\empaquetar-conector.ps1 -Plataforma ambas -Version X.Y.Z
 ```
 
-### 2. Instalar dependencias Backend
+Sale en `dist\`. Se instala en Claude Desktop desde Configuración → Extensiones →
+Advanced settings → Install Extension. **Apagar la extensión antes de reinstalar**,
+o el `.mcpb` falla con `EPERM` porque el proceso del conector retiene `coreclr.dll`.
 
-```bash
-cd backend/DatamartAnalyzer.Api
-dotnet restore
-dotnet build
-```
+El paquete de macOS sale **sin firmar**: macOS lo pone en cuarentena. Ver
+`docs/CONECTOR-MAC.md` antes de entregarlo a un cliente.
 
-### 3. Instalar dependencias Frontend
+## Los dos modos del conector
 
-```bash
-cd frontend
-npm install
-```
+Se eligen por configuración, detrás de la misma interfaz `IBackend`:
 
-### 4. Ejecutar en desarrollo
+- **SQL directo** — el usuario final carga cuatro datos (servidor, base, usuario,
+  clave) y el conector habla con SQL Server aplicando las mismas reglas de `Core`
+  que aplicaría la API. **Usuario y clave vacíos = autenticación de Windows**, y
+  es el caso esperado en la red interna.
+- **Vía API** — hay un Datamart Analyzer corriendo; hereda su modo ERP, su IA y
+  su almacén.
 
-Terminal 1 (Backend):
-```bash
-cd backend/DatamartAnalyzer.Api
-dotnet run
-# Corre en: https://localhost:7001
-```
+## Reglas del conector
 
-Terminal 2 (Frontend):
-```bash
-cd frontend
-npm run dev
-# Corre en: http://localhost:5173
-```
+- **Todo log va a stderr.** `stdout` transporta el protocolo MCP: una línea suelta
+  ahí rompe la sesión entera.
+- `InvariantGlobalization` debe quedar en `false`. Con `true` compila igual y
+  revienta en la primera consulta con "Globalization Invariant Mode is not
+  supported".
+- El conector **nunca** reporta ni loguea la clave.
+- Los `LogicalName` de los scripts embebidos (`DatamartAnalyzer.Migrations.Scripts.*`)
+  son la identidad del script en la tabla `SchemaVersions` de cada datamart.
+  Cambiarlos hace correr de nuevo las migraciones sobre almacenes ya instalados.
 
-## Estructura de Base de Datos
+## Cuidado con Core
 
-### Vista Principal de Metadatos
+`DatamartAnalyzer.Core` existe **dos veces**: acá y, ya evolucionado, en
+`Features/DatamartAnalyzer` de `ADPRO.Core.API` (net8, Carter, enums como texto).
+Los dos escriben sobre las mismas tablas `ADP_DTM_APP`. Al tocar `Core`, decidir
+si el cambio también tiene que ir del otro lado.
 
-La vista `ADP_DTM_VCONF.DefinicionesCamposTabla` en cada base de datos de datamart contiene:
+## Trampas de PowerShell 5.1
 
-| Columna | Descripción |
-|---------|-------------|
-| NombreTabla | Nombre de la tabla/vista del datamart |
-| NombreCampo | Nombre del campo/columna |
-| TipoCampo | Tipo de dato SQL |
-| TipoObjeto | 'HECHO' o 'DIMENSION' |
-| DescripcionCampo | Descripción legible del campo |
-| EsLlave | Indica si es llave primaria/foránea |
-| Formato | Formato de presentación |
+Los scripts de este repo corren en Windows PowerShell 5.1: no existe el operador
+ternario `? :`, los nombres de variable **no distinguen mayúsculas** (`$minX` y
+`$MinX` son la misma), y un archivo escrito sin BOM se lee como ANSI y mangla los
+acentos.
 
-> **Nota**: Si la vista tiene columnas con nombres distintos, ajustar el modelo `SchemaColumn.cs` y la query en `SchemaService.cs`.
+## Estado
 
-### Vistas Adicionales del ERP
-
-Cada base de datos puede contener vistas adicionales en el esquema `ADP_DTM_VCONF` que representan documentos del ERP (facturas, órdenes, inventario, etc.). El sistema las descubre automáticamente.
-
-## Flujo de la Aplicación
-
-1. Usuario selecciona base de datos del servidor YOSEMITE
-2. Sistema carga metadatos desde `ADP_DTM_VCONF.DefinicionesCamposTabla`
-3. Usuario escribe pregunta en lenguaje natural
-4. Backend envía a Claude: contexto del schema + pregunta del usuario
-5. Claude genera: SQL query + tipo de respuesta (tabla/gráfico/texto)
-6. Backend ejecuta SQL y devuelve resultados
-7. Frontend renderiza: tabla interactiva, gráfico Recharts, o texto según indicación de IA
-
-## Endpoints API
-
-| Método | Ruta | Descripción |
-|--------|------|-------------|
-| GET | `/api/databases` | Lista bases de datos del servidor YOSEMITE |
-| GET | `/api/schema/{database}` | Carga metadatos de hechos y dimensiones |
-| POST | `/api/analyze` | Procesa pregunta con IA y retorna resultado |
-| POST | `/api/query` | Ejecuta SQL directamente (modo avanzado) |
-| GET | `/api/views/{database}` | Lista vistas disponibles en el datamart |
-
-## Prompt de Sistema para Claude (IA)
-
-El prompt que se envía a Claude incluye:
-- Estructura completa de tablas (hechos y dimensiones)
-- Instrucción de responder SOLO en JSON con estructura definida
-- Ejemplos de tipos de respuesta válidos
-- Restricciones de seguridad (solo SELECT, no DML)
-
-## Consideraciones de Seguridad
-
-- Solo se permiten queries `SELECT` (whitelist de keywords)
-- Timeout máximo de query: 30 segundos
-- Windows Authentication maneja la autorización a nivel de BD
-- No se expone el connection string al frontend
-
-## Comandos Útiles Claude Code
-
-```bash
-# Verificar conexión a YOSEMITE
-dotnet run --project backend/DatamartAnalyzer.Api -- --test-connection
-
-# Ejecutar tests
-dotnet test
-
-# Build producción frontend
-cd frontend && npm run build
-
-# Ver logs detallados
-dotnet run --verbosity detailed
-```
-
-## Tareas Pendientes / TODOs
-
-- [ ] Agregar autenticación de usuario en el frontend (si se requiere)
-- [ ] Exportar resultados a Excel
-- [ ] Historial de consultas por sesión
-- [ ] Favoritos de consultas frecuentes
-- [ ] Modo oscuro
-- [ ] Caché de metadatos por base de datos
-
-## Troubleshooting
-
-**Error de conexión a YOSEMITE:**
-- Verificar que el equipo está en la misma red/dominio
-- Confirmar que el usuario Windows tiene acceso al servidor SQL
-- Probar con SSMS primero: `Server=YOSEMITE; Windows Auth`
-
-**Error de CORS:**
-- Verificar que el frontend corre en `http://localhost:5173`
-- Ajustar `AllowedOrigins` en `appsettings.Development.json`
-
-**IA no genera SQL correcto:**
-- Revisar que los metadatos se cargan correctamente desde `DefinicionesCamposTabla`
-- Aumentar el contexto en `AnthropicService.cs` si las tablas son muy grandes
+`main`, commit `56c5cae`, con **4 commits sin subir**: el push a GitHub pide un
+Personal Access Token, no contraseña.
