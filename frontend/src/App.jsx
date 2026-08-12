@@ -1564,6 +1564,9 @@ function SchemaPanel({ schema, vistas, onClose }) {
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function App() {
   const { theme, cycleTheme } = useTheme()
+  // null = todavia no se comprobo | 'ok' | 'sin-sql' (backend vivo, SQL no) |
+  // 'sin-api' (no se llego al backend). Distinguirlos importa: el mensaje al
+  // usuario manda a revisar lugares muy distintos.
   const [connected, setConnected] = useState(null)
   const [databases, setDatabases] = useState([])
   const [dbsLoaded, setDbsLoaded] = useState(false)
@@ -1634,11 +1637,16 @@ export default function App() {
   // Initial ping only — databases se cargan bajo demanda
   useEffect(() => {
     const init = async () => {
+      // Dos fallas distintas que antes se mezclaban en un solo `false`:
+      //   - axios rechaza  -> no llegamos al backend (no esta corriendo)
+      //   - 200 connected:false -> el backend responde pero no alcanza a SQL
+      // El endpoint /databases/ping siempre devuelve 200, incluso con SQL caido,
+      // asi que el catch identifica sin ambiguedad el backend ausente.
       try {
         const ping = await datamartApi.ping()
-        setConnected(ping.connected)
+        setConnected(ping.connected ? 'ok' : 'sin-sql')
       } catch {
-        setConnected(false)
+        setConnected('sin-api')
       }
     }
     init()
@@ -2210,8 +2218,8 @@ export default function App() {
 
             {/* Connection status */}
             <div className="flex items-center gap-1.5 px-2 py-1 rounded bg-black/20 border border-white/10">
-              <span className={`w-1.5 h-1.5 rounded-full ${connected ? 'bg-emerald-400' : 'bg-red-400'}`}
-                style={connected ? { boxShadow: '0 0 5px #34d399' } : {}} />
+              <span className={`w-1.5 h-1.5 rounded-full ${connected === 'ok' ? 'bg-emerald-400' : 'bg-red-400'}`}
+                style={connected === 'ok' ? { boxShadow: '0 0 5px #34d399' } : {}} />
               <Server size={11} className="text-white/50" />
               <span className="text-xs font-mono text-white/60">YOSEMITE</span>
             </div>
@@ -2543,10 +2551,14 @@ export default function App() {
                   <p className="text-sm text-gray-400 max-w-sm">Selecciona una base de datos del servidor <span className="text-gray-300 font-mono">YOSEMITE</span> para comenzar a analizar tus datamarts con inteligencia artificial.</p>
                 </div>
 
-                {connected === false && (
-                  <div className="flex items-center gap-2 bg-red-950/40 border border-red-800/40 rounded-xl px-4 py-3">
-                    <AlertCircle size={16} className="text-red-400 flex-shrink-0" />
-                    <p className="text-sm text-red-300">No se puede conectar al servidor YOSEMITE. Verifica la red y autenticación Windows.</p>
+                {(connected === 'sin-api' || connected === 'sin-sql') && (
+                  <div className="flex items-start gap-2 bg-red-950/40 border border-red-800/40 rounded-xl px-4 py-3">
+                    <AlertCircle size={16} className="text-red-400 flex-shrink-0 mt-0.5" />
+                    <p className="text-sm text-red-300">
+                      {connected === 'sin-api'
+                        ? 'No se puede contactar el servicio del Datamart Analyzer. Verifica que el backend esté corriendo en el puerto 5000.'
+                        : 'El servicio responde, pero no logra conectarse al servidor YOSEMITE. Verifica la red y la autenticación Windows.'}
+                    </p>
                   </div>
                 )}
               </div>
