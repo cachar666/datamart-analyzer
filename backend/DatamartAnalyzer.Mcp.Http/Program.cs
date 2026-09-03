@@ -6,6 +6,7 @@ using DatamartAnalyzer.Core.Store;
 using DatamartAnalyzer.Mcp;
 using DatamartAnalyzer.Mcp.Backends;
 using DatamartAnalyzer.Mcp.Http;
+using DatamartAnalyzer.Mcp.Http.Auth;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 //  Datamart Analyzer — servidor MCP sobre HTTP.
@@ -29,25 +30,48 @@ var builder = WebApplication.CreateBuilder(args);
 // loguear a consola sin romper nada. La regla de "todo a stderr" es del otro host
 // y se queda alli — por eso los dos Program.cs estan separados.
 
+// ── Autenticacion ──────────────────────────────────────────────────────────────
+// La identidad del usuario ES la credencial de su datamart: no hay directorio
+// corporativo detras. Eso permite atender a clientes fuera de SINCO el primer dia.
+// El servidor de autorizacion vive en Auth/EndpointsDeAutorizacion.cs.
+builder.Services.AddSingleton(new ProtectorDeCredenciales(
+    // La llave NO sale de appsettings: ese archivo se versiona y se copia.
+    Environment.GetEnvironmentVariable("DATAMART_LLAVE_CIFRADO")));
+
+builder.Services.AddSingleton<IAlmacenDeAutorizacion>(_ => new AlmacenDeAutorizacionEnMemoria(
+    TimeSpan.FromHours(builder.Configuration.GetValue("Auth:HorasDeToken", 8))));
+
+builder.Services.AddScoped<ValidadorDeCredencial>();
+
+builder.Services
+    .AddAuthentication(TokenOpacoDefaults.Esquema)
+    .AddScheme<TokenOpacoOptions, TokenOpacoHandler>(TokenOpacoDefaults.Esquema, _ => { });
+
+builder.Services.AddAuthorization();
+
 // ── El datamart ────────────────────────────────────────────────────────────────
-// FASE A2: sale de configuracion, un datamart fijo, para poder probar el transporte.
-// FASE A3: sale del token de la sesion, y esta misma clase se construye por sesion
-//          con la credencial que cargo el usuario en la pantalla de OAuth. Por eso
-//          ya se registra Scoped: cuando llegue el token, cambia el origen del dato
-//          y no la forma de registrarlo.
-var servidor = builder.Configuration["Datamart:Servidor"];
-var basedatos = builder.Configuration["Datamart:Base"];
+// Sale de la credencial del token. El respaldo por configuracion existe solo para
+// poder levantar el host sin OAuth durante el desarrollo; en cualquier otro entorno,
+// una llamada sin credencial autenticada no tiene datamart y debe fallar.
+builder.Services.AddScoped(sp =>
+{
+    var credencial = CredencialDeLaSolicitud.De(sp.GetRequiredService<IHttpContextAccessor>().HttpContext);
 
-if (string.IsNullOrWhiteSpace(servidor) || string.IsNullOrWhiteSpace(basedatos))
-    throw new InvalidOperationException(
-        "Faltan Datamart:Servidor y Datamart:Base en la configuracion. " +
-        "Cargalos en appsettings.Development.json para probar el host.");
+    if (credencial is not null)
+        return new ConexionDatamartDirecta(
+            credencial.Servidor, credencial.Base, credencial.Usuario, credencial.Clave);
 
-builder.Services.AddScoped(_ => new ConexionDatamartDirecta(
-    servidor,
-    basedatos,
-    builder.Configuration["Datamart:Usuario"],   // vacio = autenticacion de Windows
-    builder.Configuration["Datamart:Clave"]));
+    var cfg = sp.GetRequiredService<IConfiguration>();
+    var servidor = cfg["Datamart:Servidor"];
+    var basedatos = cfg["Datamart:Base"];
+
+    if (string.IsNullOrWhiteSpace(servidor) || string.IsNullOrWhiteSpace(basedatos))
+        throw new InvalidOperationException(
+            "Esta llamada no trae credencial autenticada y no hay datamart de respaldo " +
+            "configurado. Conectate primero con el flujo de OAuth.");
+
+    return new ConexionDatamartDirecta(servidor, basedatos, cfg["Datamart:Usuario"], cfg["Datamart:Clave"]);
+});
 
 builder.Services.AddScoped<IConexionDatamart>(sp => sp.GetRequiredService<ConexionDatamartDirecta>());
 
@@ -59,9 +83,10 @@ builder.Services.AddScoped<IConexionDatamart>(sp => sp.GetRequiredService<Conexi
 //
 // SCOPED — tienen estado de sesion, o dependen de algo que lo tiene:
 //
-//   IBackend (BackendSql)  El datamart activo y los filtros son campos de INSTANCIA
-//                          de BackendBase (no estaticos). Un scope por sesion basta
-//                          para aislarlos: por eso no hizo falta refactorizar nada.
+//   IBackend               El decorador BackendConEstadoPorToken. Scoped porque se
+//   BackendSql             hidrata en cada llamada desde el almacen de estado: el
+//                          scope de DI se recrea por request, asi que el BackendSql
+//                          interno nace vacio cada vez (medido en el spike de A1).
 //
 //   ISchemaService         Su cache es un Dictionary NO concurrente indexado solo
 //                          por nombre de base. Con varias sesiones eso son dos
@@ -94,10 +119,11 @@ builder.Services.AddScoped<IStoreMigrator, StoreMigrator>();
 // Mcp-Session-Id estable y Stateless = false. Un BackendSql Scoped nace vacio cada
 // vez, asi que fijar_filtros no tendria efecto sobre la llamada siguiente.
 //
-// El estado se guarda aparte, indexado por el TOKEN y no por la sesion MCP: es lo
-// unico estable que acompana a todas las llamadas de un usuario, y sobrevive al modo
-// stateless que la revision 2026-07-28 del protocolo (SEP-2567) vuelve obligatorio
-// al eliminar Mcp-Session-Id.
+// El estado se guarda aparte, indexado por la IDENTIDAD DE LA CREDENCIAL y no por la
+// sesion MCP: sobrevive al modo stateless que la revision 2026-07-28 del protocolo
+// (SEP-2567) vuelve obligatorio al eliminar Mcp-Session-Id. Se usa la credencial y no
+// el token porque el token rota al refrescarse, y colgar el estado de el perderia los
+// filtros en cada refresco sin ninguna razon visible para el usuario.
 //
 // Caduca por inactividad a proposito. Un filtro de empresa olvidado sigue recortando
 // cifras sin ninguna senal visible: es preferible que haya que volver a fijarlo.
@@ -144,6 +170,24 @@ if (builder.Environment.IsDevelopment())
 
 var app = builder.Build();
 
-app.MapMcp();
+app.UseAuthentication();
+app.UseAuthorization();
+
+// El servidor de autorizacion: /authorize, /token, /register y su metadata.
+app.MapAutorizacion();
+
+// ── El endpoint MCP ────────────────────────────────────────────────────────────
+//
+// RequireAuthorization() de verdad, no declarativo. La API de este repo llama a
+// UseAuthorization() sin registrar ningun esquema y sin un solo [Authorize]: parece
+// protegida y no lo esta. Ese es exactamente el error que aca no se puede repetir,
+// porque este host SI se va a publicar.
+//
+// En desarrollo se deja abierto para poder probar contra localhost sin montar el
+// flujo de OAuth completo — y por eso el host escucha solo en 127.0.0.1.
+var mcp = app.MapMcp();
+
+if (!app.Environment.IsDevelopment())
+    mcp.RequireAuthorization();
 
 app.Run();

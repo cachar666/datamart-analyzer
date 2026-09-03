@@ -110,8 +110,16 @@ public sealed class ClaveDeSesion(IHttpContextAccessor contexto)
 
     public string Resolver()
     {
-        var encabezado = contexto.HttpContext?.Request.Headers.Authorization.ToString();
+        // Primero la credencial autenticada: es la identidad ESTABLE. El token rota al
+        // refrescarse, asi que colgar el estado de el perderia los filtros en cada
+        // refresco sin ninguna razon visible para el usuario.
+        var credencial = Auth.CredencialDeLaSolicitud.De(contexto.HttpContext);
+        if (credencial is not null) return Auth.CredencialDeLaSolicitud.Identidad(credencial);
 
+        // Sin credencial autenticada queda el token crudo, que sirve para probar el
+        // host antes de que exista OAuth. Nunca se usa el token como indice: se guarda
+        // su SHA-256, para que un volcado de memoria no devuelva credenciales.
+        var encabezado = contexto.HttpContext?.Request.Headers.Authorization.ToString();
         if (string.IsNullOrWhiteSpace(encabezado)) return SinToken;
 
         const string prefijo = "Bearer ";
