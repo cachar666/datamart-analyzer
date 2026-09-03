@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>DatamartAnalyzer.Mcp.Http</RootNamespace>
+
+    <!-- Misma trampa que en el conector stdio: con InvariantGlobalization en true
+         compila igual y revienta en la primera consulta con "Globalization Invariant
+         Mode is not supported", porque Microsoft.Data.SqlClient necesita ICU para las
+         colaciones del datamart (Modern_Spanish_CI_AS). -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <SatelliteResourceLanguages>es</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- La version DEBE coincidir con la de ModelContextProtocol que usa el conector
+         stdio (2.1.0): los dos paquetes dependen de ModelContextProtocol.Core con
+         version exacta [2.1.0], asi que desalinearlos rompe el restore. -->
+    <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.1.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Se REFERENCIA el conector local, no se copia.
+         DatamartTools y los backends son los mismos objetos: un solo catalogo de
+         herramientas para los dos transportes. Copiarlos daria dos catalogos que
+         divergen, que es justo contra lo que advierte el CLAUDE.md del repo.
+
+         El conector local NO se modifica. Todo lo que este host necesita distinto
+         —el aislamiento entre sesiones— se resuelve con las lifetimes de DI de
+         Program.cs, no tocando su codigo. -->
+    <ProjectReference Include="..\DatamartAnalyzer.Mcp\DatamartAnalyzer.Mcp.csproj" />
+  </ItemGroup>
+
+</Project>

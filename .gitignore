@@ -4,8 +4,11 @@
 [Bb]in/
 [Oo]bj/
 
-backend/DatamartAnalyzer.Api/appsettings.Development.json
-backend/DatamartAnalyzer.Api/appsettings.Production.json
+# Mismo criterio que arriba: por patron y no por ruta, para que un proyecto nuevo
+# no quede afuera. Importa mas desde el host HTTP, donde estos archivos llevan
+# credenciales de datamart.
+**/appsettings.Development.json
+**/appsettings.Production.json
 *.user
 *.suo
 .vs/
