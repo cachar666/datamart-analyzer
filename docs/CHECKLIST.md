@@ -180,8 +180,15 @@
   nuestra IP. Es **una** IP en vez de una por sede, pero no es cero gestión.
 
 - [ ] **5.1 Lo que falta de código** — 🤖
-  - [ ] `Descripcion` del backend derivada **por sesión** (hoy sale en `estado` y con
-        multi-credencial puede filtrar el servidor de otro cliente).
+  - [x] `Descripcion` del backend por sesión — **ya lo era**, no hacía falta código
+        nuevo. Reconstruí la cadena de DI: `BackendConEstadoPorToken` → `BackendSql`
+        → `ConexionDatamartDirecta` son las tres **Scoped**, y esta última se arma en
+        cada scope desde `CredencialDeLaSolicitud.De(httpContext)` — la credencial
+        *de ese request*, no de un caché compartido. El spike de A1 ya midió que un
+        scope nuevo nace en cada tool call, así que no hay estado congelado posible.
+        *Sin verificar con un segundo datamart real* (solo tengo `YOSEMITE` a mano);
+        si aparece un segundo datamart de prueba, repetir el chequeo de dos sesiones
+        de A2 pero comparando el campo `conexion` de `estado`, no solo los filtros.
   - [ ] **Almacén de tokens**: hoy en memoria, reiniciar el host desloguea a todos.
         Decidir Redis o SQL — **no** archivo local (el host no debe tener estado en
         disco, para poder ir a Azure).
@@ -189,10 +196,15 @@
         el host central hablará con datamarts publicados por internet.
   - [ ] Kestrel fuera de `127.0.0.1`, **solo** detrás del proxy y con 5.3 listo.
 
-- [ ] **5.2 Verificar contra la documentación de desarrollador** — 🤖
-  - [ ] ¿Claude exige `/register` (registro dinámico)? Ya está implementado; si no
-        hace falta, se quita.
-  - [ ] Rangos de IP de Anthropic para la allowlist — **segunda** capa, nunca la primera.
+- [x] **5.2 Verificar contra la documentación de desarrollador** — 🤖
+  - [x] ¿Claude exige `/register`? **No.** El Owner puede cargar un client id/secret
+        estáticos al registrar el conector; el registro dinámico (RFC 7591) es
+        opcional. El nuestro ya está implementado y anda — se deja: no hace daño y
+        cubre a cualquier otro cliente MCP que sí lo use por convención.
+  - [ ] Rangos de IP de Anthropic para la allowlist — **segunda** capa, nunca la
+        primera. *Pendiente:* no encontré el listado de rangos en la documentación
+        de soporte; hay que pedirlo directo (soporte de Anthropic) o buscar en su
+        documentación de desarrollador (distinta de la de soporte).
 
 - [x] **5.2b Cómo lo encuentran los usuarios** — 🤖 investigado, verificado en la
       documentación de Anthropic. **No** es "cada persona busca una URL": en
