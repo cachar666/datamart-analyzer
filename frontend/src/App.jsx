@@ -280,7 +280,7 @@ function ChartDisplay({ datos, grafico }) {
             agrupadas por <span className="text-amber-400 font-mono">«{campoGrupo}»</span>, y este visor
             solo sabe dibujar una. Dibujarlas seguidas daría una curva que no corresponde a los datos.
           </p>
-          <p className="mt-2 text-xs text-gray-500">Las cifras están en la tabla de esta misma respuesta.</p>
+          <p className="mt-2 text-xs text-gray-500">La consulta sí trajo {datos.length} filas: el problema es el dibujo, no los datos.</p>
         </div>
       </div>
     )
@@ -384,11 +384,21 @@ function ChartDisplay({ datos, grafico }) {
 
 // ─── Data Table ───────────────────────────────────────────────────────────────
 function DataTable({ datos, compact = false }) {
-  if (!datos?.length) return null
-  const keys = Object.keys(datos[0])
+  // Los hooks van ANTES de cualquier return. Estaban despues del `if (!datos?.length)
+  // return null`, o sea que este componente llamaba 0 hooks cuando llegaba sin filas
+  // y 3 cuando llegaba con filas. Si el mismo montaje pasa de vacio a con datos
+  // —lo normal en un panel que carga— React tira "Rendered more hooks than during
+  // the previous render" y se cae el arbol entero.
+  //
+  // Hoy no explota porque los call sites lo protegen con `datos?.length > 0`, pero
+  // eso es suerte prestada: un call site nuevo sin la guarda lo despierta.
   const [page, setPage] = useState(0)
   const [sortCol, setSortCol] = useState(null)
   const [sortDir, setSortDir] = useState('asc')
+
+  if (!datos?.length) return null
+
+  const keys = Object.keys(datos[0])
   const PER_PAGE = compact ? 5 : 20
 
   const handleSort = (col) => {
@@ -553,12 +563,18 @@ function MessageBubble({ msg, devMode, pregunta, onSave, isSaved, usage, onFavor
           )}
 
           {/* Tabla */}
-          {(tipoRespuesta === 'Tabla' || tipoRespuesta === 'TablaMasGrafico' || tipoRespuesta === 'TablaMasTexto') && datos?.length > 0 && (
+          {/* La tabla se dibuja porque HAY FILAS, no porque el tipo este en una lista
+              blanca. Con la lista, un tipoRespuesta 'Texto' —o cualquier valor nuevo
+              o inesperado— hacia desaparecer las filas mientras la insignia de arriba
+              seguia anunciando "N resultados": una conclusion financiera sin una sola
+              cifra verificable y sin ninguna senal de que faltara algo. Se excluye
+              Grafico, que tiene su propio bloque, y Error, que no trae datos. */}
+          {tipoRespuesta !== 'Error' && tipoRespuesta !== 'Grafico' && datos?.length > 0 && (
             <DataTable datos={datos} />
           )}
 
           {/* Sin resultados */}
-          {(tipoRespuesta === 'Tabla' || tipoRespuesta === 'TablaMasGrafico' || tipoRespuesta === 'TablaMasTexto' || tipoRespuesta === 'Grafico') && datos?.length === 0 && (
+          {tipoRespuesta !== 'Error' && datos?.length === 0 && (
             <div className="mt-3 flex items-center gap-2 text-xs text-gray-500 font-mono bg-ink-900 border border-gray-800 rounded-lg px-3 py-2">
               <Table size={12} />
               No se encontraron registros para esta consulta.
@@ -757,7 +773,10 @@ function DashboardPanel({ fav, database, appliedFilters, onToggleGlobal, onRemov
 
   const tipoResp = fav.tipoRespuesta
   const showChart = (tipoResp === 'Grafico' || tipoResp === 'TablaMasGrafico') && fav.grafico
-  const showTable = tipoResp === 'Tabla' || tipoResp === 'TablaMasGrafico' || tipoResp === 'TablaMasTexto'
+  // Mismo criterio que en MessageBubble: la tabla es el caso por defecto. Con la
+  // lista blanca, un panel de tipo 'Texto' quedaba con el cuerpo en blanco de forma
+  // permanente —sin error y sin "sin resultados"— con las filas ya cargadas detras.
+  const showTable = tipoResp !== 'Error' && tipoResp !== 'Grafico'
   const globalActive = fav.aceptaFiltrosGlobales !== false
   const appliedActivos = Object.entries(appliedFilters ?? {})
     .filter(([, v]) => Array.isArray(v) && v.length > 0)

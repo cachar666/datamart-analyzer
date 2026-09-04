@@ -288,6 +288,10 @@ public class StoreRepository : IStoreRepository
             ? TipoRespuesta.Tabla
             : req.TipoRespuesta;
 
+        // Una consulta guardada SI puede ser Texto legitimamente (un conteo, una
+        // respuesta conceptual), asi que aca no se degrada. La diferencia con el panel
+        // es que la burbuja del chat sabe pintar prosa y el panel del dashboard no.
+
         await using var conn = await ConnAsync(database);
         var id = await conn.QuerySingleAsync<Guid>($"""
             INSERT INTO [{Schema}].SavedQueries (Pregunta, Sql, TipoRespuesta, GraficoJson, Tags)
@@ -448,6 +452,15 @@ public class StoreRepository : IStoreRepository
         // conector y la importacion.
         grafico = Graficos.Normalizar(grafico);
         if (grafico is null && tipo is TipoRespuesta.Grafico or TipoRespuesta.TablaMasGrafico)
+            tipo = TipoRespuesta.Tabla;
+
+        // Texto tampoco sirve para un panel: el visor dibuja tabla o grafico, no prosa,
+        // asi que un panel marcado Texto quedaba con el cuerpo en blanco de forma
+        // permanente — sin error, sin "sin resultados", con las filas cargadas detras.
+        // Y llega solo: si el mapeo del enum degrada una respuesta a Texto, el panel se
+        // guarda con ese tipo. Un panel siempre tiene SQL, asi que Tabla es la unica
+        // salida honesta.
+        if (tipo is TipoRespuesta.Texto)
             tipo = TipoRespuesta.Tabla;
 
         await using var conn = await ConnAsync(database);

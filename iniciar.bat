@@ -34,7 +34,7 @@ if not exist "%FRONTEND_DIR%\package.json" (
 
 where dotnet >nul 2>&1
 if errorlevel 1 (
-    echo [ERROR] 'dotnet' no esta en PATH. Instala el .NET 8 SDK.
+    echo [ERROR] 'dotnet' no esta en PATH. Instala el .NET 9 SDK.
     goto :end
 )
 where npm >nul 2>&1
