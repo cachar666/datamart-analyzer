@@ -16,10 +16,17 @@
   `9` commits locales: 6 en el conector, 2 en `ADPRO.Informes`, 1 en `ADPRO.Core.API`.
   *Verificado:* `git log --oneline origin/<rama>..HEAD` en los tres repos.
 
-- [ ] **0.1b Pushear** — 🧑
-  Ninguno subido. El conector va a GitHub personal y **pide un PAT**, no contraseña.
-  Los dos del ERP van a Azure DevOps.
-  *Cómo se verifica:* `git log origin/<rama>..HEAD` devuelve vacío en los tres.
+- [x] **0.1b Pushear** — 🤖 2/3, falta 1 · 🧑
+  Este repo tiene **dos remotos**: `origin` (mirror en Azure DevOps,
+  `ADPRO.DatamartAnalyzer`) y `github` (personal, `cachar666/datamart-analyzer` — el
+  que documenta `CLAUDE.md` como canónico). Subido a `origin` y a los dos repos del
+  ERP (Azure DevOps, con la credencial ya autenticada de la sesión). `github` se
+  quedó esperando login interactivo — lo maté a los 20s, sin nada colgado.
+  - [x] `origin` de este repo → Azure DevOps.
+  - [x] `ADPRO.Informes` (`DatamartAnalyzer`) → Azure DevOps.
+  - [x] `ADPRO.Core.API` (`Feature_VisualizadorDM`) → Azure DevOps.
+  - [ ] `github` de este repo → **pendiente, solo vos**: `git push github feat/mcp-remoto`
+        una vez para completar el login (o `gh auth login`). No se maneja tu PAT acá.
 
 - [x] **0.2 Verificación en runtime — árbol laboratorio** — 🤖
   App corriendo contra `YOSEMITE`: sugeridas **42 ADPRO / 11 SRM**, que coincide
@@ -112,17 +119,20 @@
   *Verificado:* `SELECT COUNT(*) ... WHERE GraficoJson IS NULL AND TipoRespuesta IN
   ('Grafico','TablaMasGrafico')` → **0**.
 
-- [ ] **3.2 Reempaquetar el `.mcpb`** — 🧑
-  **Es la causa raíz de 3.1 y sigue viva:** el instalado (1.5.0) se armó el 11/08 a
-  las **12:22** y el guard que impide ese dato entró a las **13:01**, 39 minutos
-  después. Cualquier panel que agregues hoy desde esa extensión reproduce el defecto.
-  - [ ] `powershell -ExecutionPolicy Bypass -File scripts\empaquetar-conector.ps1 -Plataforma win -Version 1.6.0`
-  - [ ] Agregar al `manifest.json` las **7** herramientas que le faltan (declara 21,
-        el código expone 28: las de sugeridas y categorías).
-  - [ ] Apagar la extensión antes de reinstalar, o falla con `EPERM`.
-  *Cómo se verifica:* desde el `.mcpb` nuevo, `agregar_panel` con
-  `tipoRespuesta=Grafico` y sin ejes queda guardado como `Tabla`; y `tools/list`
-  devuelve 28 nombres.
+- [x] **3.2 Reempaquetar el `.mcpb`** — 🤖 empaquetado y verificado · 🧑 falta instalar
+  **Era la causa raíz de 3.1**, y el instalado (1.5.0, 11/08 12:22) sigue vivo hasta
+  que lo reemplaces: el guard entró a las 13:01 de ese mismo día, 39 minutos después.
+  - [x] `manifest.json` con las 7 herramientas que faltaban — declaraba 21, ahora 28.
+  - [x] `scripts\empaquetar-conector.ps1 -Plataforma win -Version 1.6.0` → generó
+        `dist\DatamartAnalyzer-ADPRO-win-1.6.0.mcpb` (37.2 MB).
+  - [x] Verificado *dentro* del `.mcpb`: `manifest.json` trae **28** tools y
+        `version 1.6.0`; el `.exe` empaquetado es del 04/09, muy posterior al commit
+        del guard — el binario instalado sí lo tiene.
+  - [ ] **Instalarlo vos**: Claude Desktop → Configuración → Extensiones → **apagar
+        la actual antes** (si no, falla con `EPERM` porque el proceso retiene
+        `coreclr.dll`) → arrastrar el `.mcpb` nuevo.
+  *Cómo se verifica ya instalado:* `estado` reporta la extensión nueva; `agregar_panel`
+  con `tipoRespuesta=Grafico` y sin ejes queda guardado como `Tabla`.
 
 ---
 
