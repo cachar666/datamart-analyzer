@@ -289,7 +289,17 @@ public class AnalyzeController : ControllerBase
                 "grafico" => TipoRespuesta.Grafico,
                 "texto" => TipoRespuesta.Texto,
                 "tablamasgrafico" or "tabla_mas_grafico" => TipoRespuesta.TablaMasGrafico,
-                "tablasmastexto" or "tabla_mas_texto" => TipoRespuesta.TablaMasTexto,
+                // "tablamastexto" es la forma que realmente llega: el prompt le pide al
+                // modelo exactamente "TablaMasTexto" (AnthropicService, formato de salida).
+                // Estaba escrito "tablaSmastexto", con una S de mas, asi que NUNCA
+                // coincidia y toda respuesta de tabla+interpretacion caia al descarte de
+                // abajo como Texto. El front no dibuja tabla para Texto: el usuario se
+                // quedaba con la conclusion de la IA y sin una sola cifra. Se deja la
+                // forma vieja tambien, por si algun modelo la devuelve.
+                "tablamastexto" or "tablasmastexto" or "tabla_mas_texto" => TipoRespuesta.TablaMasTexto,
+
+                // Ultimo recurso. Si la consulta trajo filas, degradar a Texto las
+                // esconde: la tabla es lo unico que el usuario puede verificar.
                 _ => TipoRespuesta.Texto
             };
 
