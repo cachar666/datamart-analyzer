@@ -86,6 +86,20 @@ const fmtAxis = v => {
 }
 const isNumericCol = (datos, key) => datos.slice(0, 5).every(r => r[key] === null || r[key] === undefined || !isNaN(Number(r[key])))
 
+/**
+ * Fecha corta, o cadena vacía si no hay fecha válida.
+ *
+ * `new Date(undefined).toLocaleDateString()` devuelve la cadena "Invalid Date" y la
+ * pinta como si fuera un dato. Preferimos no mostrar nada: un hueco se entiende,
+ * "Invalid Date" parece un error del sistema.
+ */
+const fmtFechaCorta = v => {
+  if (!v) return ''
+  const d = new Date(v)
+  if (isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })
+}
+
 // ─── Detección de filtros soportados por una pregunta ─────────────────────────
 // Regex espejos de Controllers.SqlUsaDimensionInsumo (backend)
 const SQL_USA_PROYECTO = /\[?ADP_DTM_DIM\]?\.\[?Proyecto\]?\b/i
@@ -200,7 +214,7 @@ function SuggestionCard({ s, color, uso, selectedDb, filtrosActivos = [], onSele
 // ─── Chart Renderer ───────────────────────────────────────────────────────────
 function ChartDisplay({ datos, grafico }) {
   if (!datos?.length || !grafico) return null
-  const { tipo, campoEjeX: pedidoX, campoEjeY: pedidoY, titulo, colorPrimario } = grafico
+  const { tipo, campoEjeX: pedidoX, campoEjeY: pedidoY, campoAgrupacion: pedidoGrupo, titulo, colorPrimario } = grafico
   const color = colorPrimario || '#3b82f6'
 
   // Los ejes se resuelven contra las columnas REALES del resultado, sin distinguir
@@ -232,6 +246,41 @@ function ChartDisplay({ datos, grafico }) {
           <p className="mt-2 text-xs text-gray-500">
             Columnas disponibles: <span className="font-mono text-gray-400">{columnas.join(', ')}</span>
           </p>
+        </div>
+      </div>
+    )
+  }
+
+  // ── Series múltiples: no se dibujan, y por eso no se dibuja nada ────────────
+  //
+  // campoAgrupacion significa que el resultado trae UNA SERIE POR GRUPO: una fila
+  // por par (ejeX, grupo). Varias consultas preconstruidas lo traen lleno
+  // («Nombre Proyecto», «Estado», «Tipo Costo», «Insumo Descripcion»), pero este
+  // visor solo sabe pintar una serie: dibujaba las N seguidas como si fueran una
+  // sola, con el eje X repitiendo cada categoría una vez por grupo. Una línea que
+  // salta de proyecto en proyecto dentro del mismo mes se lee como volatilidad
+  // mensual, y no lo es. El gráfico mentía sobre los datos.
+  //
+  // Mientras no exista el pivot (una columna por grupo y una serie por columna),
+  // la salida honesta es no dibujar y decir por qué: mejor no responder que
+  // responder mal. La tabla de la misma respuesta sigue trayendo las cifras.
+  const campoGrupo = resolver(pedidoGrupo)
+  const grupos = campoGrupo
+    ? Array.from(new Set(datos.map(r => String(r[campoGrupo] ?? '')))).filter(Boolean)
+    : []
+
+  if (campoGrupo && grupos.length > 1) {
+    return (
+      <div className="mt-4">
+        {titulo && <p className="text-xs font-mono text-gray-400 mb-2 uppercase tracking-wider">{titulo}</p>}
+        <div className="bg-ink-800 rounded-xl p-4 text-sm">
+          <p className="text-gray-300 mb-1">No se dibuja este gráfico, a propósito.</p>
+          <p className="text-gray-400">
+            La consulta trae <span className="text-amber-400 font-mono">{grupos.length} series</span>{' '}
+            agrupadas por <span className="text-amber-400 font-mono">«{campoGrupo}»</span>, y este visor
+            solo sabe dibujar una. Dibujarlas seguidas daría una curva que no corresponde a los datos.
+          </p>
+          <p className="mt-2 text-xs text-gray-500">Las cifras están en la tabla de esta misma respuesta.</p>
         </div>
       </div>
     )
@@ -1969,6 +2018,19 @@ export default function App() {
       const destino = dashId
         ?? (await datamartApi.dashboards.crear(base, { nombre: nuevoDashNombre || 'Nuevo Dashboard' })).id
 
+      // Un panel de SQL generada por IA que se guarda con filtros activos NO puede
+      // aceptar los filtros globales del dashboard: esa SQL ya los trae dentro del
+      // WHERE. Al aplicar filtros el dashboard vuelve a inyectar, y FilterInjector
+      // solo evita duplicados para 'insumo' — los IN se suman sin chequeo, y queda
+      // p.[Empresa] IN ('NORTE') AND p.[Empresa] IN ('SUR'): cero filas, mostradas
+      // como "sin resultados". Declararlo false es decir la verdad sobre el panel.
+      //
+      // Los prebuilt son la excepcion y siguen en true: no guardan SQL cocinada, se
+      // re-ejecutan por su pregunta clave y el SQL se regenera con los filtros del
+      // momento.
+      const hayFiltrosGuardados = Object.values(filtrosActivos ?? {})
+        .some(v => Array.isArray(v) && v.length > 0)
+
       await datamartApi.dashboards.agregarPanel(base, destino, {
         titulo: panelTitulo,
         sql,
@@ -1977,7 +2039,7 @@ export default function App() {
         esPrebuilt: !!esPrebuilt,
         prebuiltKey: prebuiltKey ?? null,
         filtrosFijos: filtrosActivos ?? null,
-        aceptaFiltrosGlobales: true,
+        aceptaFiltrosGlobales: !!esPrebuilt || !hayFiltrosGuardados,
       })
 
       await recargarAlmacen(base)
@@ -2046,7 +2108,7 @@ export default function App() {
           content: null,
           fromHistory: true,
           response: {
-            tipoRespuesta: saved.tipoRespuesta,
+            tipoRespuesta: exitoso ? saved.tipoRespuesta : 'Error',
             explicacionTexto: saved.pregunta,
             sqlGenerado: saved.sql,
             datos,
@@ -2387,6 +2449,7 @@ export default function App() {
         {/* Dashboard View */}
         {vistaActiva === 'dashboard' && (
           <Dashboard
+            key={selectedDb?.nombre ?? 'sin-datamart'}
             dashboards={dashboards}
             database={selectedDb}
             onCambio={() => recargarAlmacen(selectedDb?.nombre)}
@@ -2650,7 +2713,7 @@ export default function App() {
                             <p className="text-sm text-gray-200 truncate">{q.pregunta}</p>
                             <div className="flex items-center gap-2 mt-1">
                               <span className="text-[10px] font-mono text-gray-600">{q.tipoRespuesta}</span>
-                              <span className="text-[10px] font-mono text-gray-700">{new Date(q.fecha).toLocaleDateString('es-CO', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</span>
+                              <span className="text-[10px] font-mono text-gray-700">{fmtFechaCorta(q.fecha ?? q.createdAt)}</span>
                               <FilterSupportBadges soportados={soportados} activos={filtrosActivos} />
                             </div>
                           </button>
