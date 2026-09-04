@@ -232,28 +232,44 @@
 
 ---
 
-## Bloque 6 · Deuda de la auditoría, no atendida
+## Bloque 6 · Deuda de la auditoría
 
-Confirmados por refutación adversarial. Ordenados por lo que le muestran al usuario.
-Todos en `DatamartAnalyzer.jsx` salvo donde se indique. — 🤖
+Confirmados por refutación adversarial, arreglados y **revisados por un segundo
+agente adversarial** antes de commitear (`86bb44c`). Todos en
+`DatamartAnalyzer.jsx` salvo donde se indique. — 🤖
 
-- [ ] `~295` El eje Y convierte `NULL` en 0: una celda sin dato se dibuja como una
-      barra de cero, en desacuerdo con la tabla de al lado. **Cifra engañosa.**
-- [ ] `~1663` Si falla la carga del detalle de un dashboard, se muestra **vacío** en
-      vez de reportar el fallo. "No hay nada" es falso.
-- [ ] `~1956` `agregarPanel` descarta el resultado y `fetchApi` se traga el error: el
-      panel no se crea y no se avisa.
-- [ ] `~1770` El `catch` de `handleSelectDb` espera la forma de error de axios que
-      `fetchApi` nunca lanza: el aviso accionable de 404 es código muerto.
-- [ ] `~1778` Al cambiar de datamart, los paneles del anterior se reejecutan contra la
-      base nueva durante la carga. Parcialmente cubierto por la `key`; confirmar en 0.2b.
-- [ ] `~1934` Una consulta guardada persiste el SQL con filtros y al reejecutarla se
-      rotula con la pregunta sin mencionarlos. Se resuelve de fondo en **2.3**;
-      mientras, un chip con los filtros embebidos.
-- [ ] `~739` `resp.tipoRespuesta` sin guarda sobre un valor que puede ser `undefined`.
-- [ ] `~24` Selector de tema **inerte**: ningún CSS define `theme-day`/`theme-night`.
-- [ ] `~1946` Un comentario afirma una validación server-side del gráfico que en el
-      árbol del ERP no existe.
+- [x] `~295` El eje Y convierte `NULL` en 0 → ahora `null` (hueco en la serie), con
+      aviso de cuántas filas quedaron sin valor.
+- [x] `~1663` Detalle de dashboard que falla en cargar → distinguido de "vacío de
+      verdad" (`errorCarga`, verificado que `d.totalPaneles` llega poblado desde
+      `StoreModels.cs:62` + `StoreRepository.cs:353`), con botón Reintentar y aviso
+      si vuelve a fallar.
+- [x] `~1956` `agregarPanel` descartaba el resultado → capturado. **El review
+      encontró que este arreglo, tal como se hizo primero, abría un doble-envío**
+      (el modal quedaba abierto e interactivo durante el `await`, sin guarda de
+      reentrancia): doble clic → panel duplicado; reintento tras fallo parcial →
+      dashboard huérfano; "Cancelar" no cancelaba la escritura en curso. Corregido:
+      reentrancia con un `ref` síncrono, el dashboard creado se reutiliza en el
+      reintento, y Cancelar/backdrop/Escape no cierran mientras hay una escritura
+      en vuelo.
+- [x] `~1770` El `catch` de `handleSelectDb` esperaba una forma de error de axios
+      que `fetchApi` nunca produce → chequeo explícito de `undefined`.
+- [x] `~1778` Paneles de la base anterior reejecutándose contra la nueva → se vacía
+      `dashboards`/`savedQueries` antes del `await`, no solo después.
+- [x] `~739` `resp.tipoRespuesta` sin guarda → guard en las 3 ramas de
+      `DashboardPanel.ejecutar` y en las 2 de `handleSend`.
+- [x] `~1946` Comentario que afirmaba una validación server-side del gráfico que no
+      existe → corregido.
+- [~] `~24` Selector de tema inerte → **solo la mitad segura.** `MessageBubble` ya
+      no llama su propio `useTheme()` (recibe el tema por prop: antes dos copias
+      independientes competían por el mismo `localStorage`/`classList`, y una
+      burbuja ya montada no seguía un cambio de tema en vivo). **Sigue sin decidir**
+      si se escriben las reglas CSS `.theme-day`/`.theme-night` que nunca
+      existieron, o se retira el toggle del header — no es una decisión de código,
+      necesita definir cómo se ven esos temas o si se abandonan.
+
+- [ ] **~1934** Consulta guardada persiste SQL con filtros, se reejecuta sin
+      mencionarlos. **No tocado en esta pasada** — depende de **2.3** (cruza repos).
 
 **Descartado tras verificar** — "borrar una consulta recién guardada no la borra del
 almacén": `handleSaveQuery` **sí** reemplaza el id optimista por el del servidor. Es
