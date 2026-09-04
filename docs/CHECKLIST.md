@@ -184,6 +184,20 @@
         hace falta, se quita.
   - [ ] Rangos de IP de Anthropic para la allowlist — **segunda** capa, nunca la primera.
 
+- [x] **5.2b Cómo lo encuentran los usuarios** — 🤖 investigado, verificado en la
+      documentación de Anthropic. **No** es "cada persona busca una URL": en
+      Team/Enterprise el Owner registra el conector **una sola vez**
+      (*Organization settings → Connectors*, solo pide la URL — no hay campo de
+      nombre) y cada persona después lo ve listado en *Customize → Connectors* sin
+      escribir nada, solo hace clic en "Connect".
+      **Límite real:** sin coincidencia en el *Connectors Directory* de Anthropic
+      (curado por ellos, no autoregistrable — el ejemplo que dan es un partner ya
+      integrado), la lista muestra la etiqueta genérica **"Custom"**, no
+      "ADPRO Datamart Analyzer". Fijé `ServerInfo.Title` en el protocolo MCP a ese
+      nombre (`e33bb18`) porque es la única palanca de código que tenemos, pero no
+      hay evidencia de que Claude lo use como etiqueta visible — **verificar viendo
+      el registro real**, no antes.
+
 - [ ] **5.4 Registrar el conector** — 🧑 (Owner de la organización)
   - [ ] *Organization settings → Connectors*, con client id/secret.
   - [ ] Sin token → **401** desde fuera de la red.
@@ -191,6 +205,8 @@
   - [ ] Dos sesiones con credenciales distintas **no** se cruzan (ni conexión, ni
         esquema cacheado, ni filtros).
   - [ ] `Compras` y `Prueba conector` se ven desde el remoto.
+  - [ ] **Confirmar qué etiqueta muestra realmente la lista** — "Custom" o el
+        nombre del protocolo — y anotarlo, ya que 5.2b quedó sin verificar.
 
 ---
 
