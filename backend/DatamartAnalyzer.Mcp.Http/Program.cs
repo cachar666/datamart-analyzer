@@ -148,7 +148,20 @@ builder.Services.AddScoped<MarcaDeScope>();
 // DatamartTools viene del proyecto del conector local, sin modificar: el mismo
 // catalogo de 28 herramientas, con los mismos nombres y las mismas firmas.
 builder.Services
-    .AddMcpServer()
+    .AddMcpServer(o =>
+    {
+        // Sin esto, el nombre que viaja en el handshake de "initialize" es el del
+        // ensamblado (DatamartAnalyzer.Mcp.Http) — no dice nada al usuario final.
+        //
+        // OJO con lo que esto NO garantiza: es el nombre que lleva el PROTOCOLO MCP,
+        // no necesariamente la etiqueta que Claude muestra en Customize > Connectors.
+        // Verificado contra la documentacion de Anthropic: sin coincidencia en su
+        // Connectors Directory (curado por Anthropic, no algo que se autoregistre),
+        // esa lista muestra la etiqueta generica "Custom". Fijarlo aca es la unica
+        // palanca que tenemos del lado del codigo — no cuesta nada, y si el cliente
+        // llega a leerlo, ya esta puesto.
+        o.ServerInfo = new() { Name = "adpro-datamart-analyzer", Title = "ADPRO Datamart Analyzer", Version = "1.0.0" };
+    })
     // Se deja el DEFAULT (Stateless = true) a proposito, y no es indiferencia:
     //
     // Se probaron las dos ramas. Con Stateless = false el SDK si emite un
