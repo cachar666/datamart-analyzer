@@ -220,18 +220,25 @@
 
 - [x] **4.2 `iniciar.bat`** — 🤖 el mensaje pedía el SDK de .NET 8; los proyectos son `net9.0`.
 
-- [ ] **4.3 `CLAUDE.md` del módulo del ERP** — 🧑 aporta, 🤖 escribe
-  `ADPRO.Informes/src/pages/datamart/CLAUDE.md` publica endpoints equivocados
-  (`/api/analyze` cuando el cliente real usa `api/datamart/analyze` vía
-  `providerHTTP.fetchApi`), describe el arranque del laboratorio (`dotnet run` +
-  `npm run dev`, que en ese árbol no existe), y su TODO lista "Modo oscuro" y
-  "Favoritos" como pendientes cuando los dos existen. **Se carga como instrucciones
-  del proyecto**, así que desvía a quien trabaje ahí.
-  **No lo escribo inventando** el flujo real de arranque de ese módulo: con dos líneas
-  tuyas lo dejo correcto.
+- [x] **4.3 `CLAUDE.md` del módulo del ERP** — 🧑 aportó, 🤖 escribió
+  Reescrito completo. Verificado por código (agente `Explore`): rutas reales
+  bajo `api/datamart/*` (no `/api/analyze` plano), stack real (Vite puerto
+  3600, backend net8.0 minimal API + un `ICarterModule`), DI (`IConexionDatamart`
+  Singleton vía `dbo.ADPConfig`, resto Scoped), autorización anónima a nivel
+  HTTP, y los TODOs que ya estaban resueltos (modo oscuro, favoritos, historial
+  persistente, caché de schema). Carlos aportó lo que el código no dice: el
+  flujo real de arranque (mixto, típicamente los dos locales) y que la falta
+  de `[Authorize]` es deliberada (protegido por vivir embebido en el shell del
+  ERP + red interna, no un gap). Pendientes reales que quedaron anotados:
+  exportar a Excel, pivote de series múltiples en `ChartDisplay`.
+  *Verificado:* diff revisado por Carlos antes de commitear.
 
-- [ ] **4.4 `TECHNICAL.md:336` del módulo** — 🤖
-  Afirma que las consultas se guardan en `localStorage`, que es justo lo que se migró.
+- [x] **4.4 `TECHNICAL.md` del módulo** — 🤖
+  Afirmaba que las consultas se guardan en `localStorage` (lo que justo se migró),
+  en tres lugares: la tabla de estados (`savedQueries`), y las listas de "qué
+  hace"/"qué no hace" el sistema. Las tres corregidas: viven en el almacén del
+  datamart (`ADP_DTM_APP`), visibles también desde el conector MCP.
+  *Verificado:* commit `111a58a` en `ADPRO.Informes`.
 
 ---
 
@@ -373,7 +380,8 @@
 
 - [ ] **5.3 Pedido a infraestructura** — 🏢 *(arrancar YA: mayor tiempo de espera)*
   *(esto sigue siendo para 5.0, el host standalone — 5.5 no lo necesita)*
-  - [ ] Regla 1: IPs de Anthropic → `mcp-datamart.sincoerp.com` **443/TCP**, con
+  - [ ] Regla 1: IPs de Anthropic (**`160.79.104.0/21`** IPv4, **`2607:6bc0::/48`**
+        IPv6 — outbound, ver 5.2) → `mcp-datamart.sincoerp.com` **443/TCP**, con
         certificado TLS válido y proxy inverso.
   - [ ] Regla 2: IP del host central → SQL de cada datamart, **4263 o 1433**.
   - [ ] El proceso como servicio de Windows.
@@ -430,10 +438,21 @@
         estáticos al registrar el conector; el registro dinámico (RFC 7591) es
         opcional. El nuestro ya está implementado y anda — se deja: no hace daño y
         cubre a cualquier otro cliente MCP que sí lo use por convención.
-  - [ ] Rangos de IP de Anthropic para la allowlist — **segunda** capa, nunca la
-        primera. *Pendiente:* no encontré el listado de rangos en la documentación
-        de soporte; hay que pedirlo directo (soporte de Anthropic) o buscar en su
-        documentación de desarrollador (distinta de la de soporte).
+  - [x] Rangos de IP de Anthropic para la allowlist — **segunda** capa, nunca la
+        primera. Publicados en `platform.claude.com/docs/en/api/ip-addresses`
+        (no en la de soporte, ahí es donde no aparecían):
+        **outbound IPv4 `160.79.104.0/21`**, **IPv6 `2607:6bc0::/48`** — este es
+        el rango que hace las llamadas de MCP tool calls hacia servidores
+        externos, el que aplica a la regla 1 de 5.3. La página dice
+        "will not change without notice" — estable, pero sin garantía de por
+        vida; revisar antes de fijarlo en un firewall que no se revisa seguido.
+        **Hallazgo aparte, no aplica acá:** existe "MCP tunnels" (investigación
+        preliminar, acceso por invitación) que evita el allowlisting por completo
+        con un túnel saliente — pero la propia documentación dice explícitamente
+        que **"MCP tunnels created through the Console are not available as
+        connectors in claude.ai"**: solo sirve para Managed Agents / Messages
+        API, no para el registro de conector en *Organization settings →
+        Connectors* que necesita 5.4. No cambia el plan de 5.3.
 
 - [x] **5.2b Cómo lo encuentran los usuarios** — 🤖 investigado, verificado en la
       documentación de Anthropic. **No** es "cada persona busca una URL": en
