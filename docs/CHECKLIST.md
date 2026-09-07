@@ -16,17 +16,15 @@
   `9` commits locales: 6 en el conector, 2 en `ADPRO.Informes`, 1 en `ADPRO.Core.API`.
   *Verificado:* `git log --oneline origin/<rama>..HEAD` en los tres repos.
 
-- [x] **0.1b Pushear** — 🤖 2/3, falta 1 · 🧑
+- [x] **0.1b Pushear** — 🤖 · 🧑
   Este repo tiene **dos remotos**: `origin` (mirror en Azure DevOps,
   `ADPRO.DatamartAnalyzer`) y `github` (personal, `cachar666/datamart-analyzer` — el
-  que documenta `CLAUDE.md` como canónico). Subido a `origin` y a los dos repos del
-  ERP (Azure DevOps, con la credencial ya autenticada de la sesión). `github` se
-  quedó esperando login interactivo — lo maté a los 20s, sin nada colgado.
+  que documenta `CLAUDE.md` como canónico).
   - [x] `origin` de este repo → Azure DevOps.
   - [x] `ADPRO.Informes` (`DatamartAnalyzer`) → Azure DevOps.
   - [x] `ADPRO.Core.API` (`Feature_VisualizadorDM`) → Azure DevOps.
-  - [ ] `github` de este repo → **pendiente, solo vos**: `git push github feat/mcp-remoto`
-        una vez para completar el login (o `gh auth login`). No se maneja tu PAT acá.
+  - [x] `github` de este repo → hecho por Carlos (login/PAT, no se maneja acá).
+        *Verificado:* `git rev-list --left-right --count github/feat/mcp-remoto...HEAD` → `0 0`.
 
 - [x] **0.2 Verificación en runtime — árbol laboratorio** — 🤖
   App corriendo contra `YOSEMITE`: sugeridas **42 ADPRO / 11 SRM**, que coincide
@@ -331,19 +329,20 @@
         usuario de Windows, no versionada) para la prueba de hoy. **Sigue
         pendiente en `CUMBAL-V01`** (IIS Application Pool → Environment Variables,
         + reciclar el pool) antes de desplegar ahí.
-  - [ ] **Hallazgo real, antes de tocar `CUMBAL-V01`**: "Usuario vacío = autenticación
-        de Windows" tiene sentido en el `.mcpb` local (el proceso corre bajo la
-        sesión de Windows de esa persona) pero **no** en este host compartido — ahí
-        "vacío" autentica como la identidad de Windows del *proceso del servidor*
-        (hoy la sesión de quien lo prueba en local; mañana el application pool de
-        IIS), no la de cada usuario remoto. Dos personas distintas dejando el
-        usuario vacío terminarían conectadas con la MISMA identidad, rompiendo el
-        aislamiento por credencial que es el punto de todo esto.
-        **Decisión de Carlos**: dejarlo así para las pruebas de hoy (corre local,
-        bajo su propia sesión, así que "vacío" SÍ es él) — **antes de desplegar a
-        `CUMBAL-V01`, exigir usuario/clave SQL explícitos** en
-        `ValidadorDeCredencial`/el formulario, sin la opción de autenticación
-        integrada.
+  - [x] **Hallazgo real, ya corregido**: "Usuario vacío = autenticación de Windows"
+        tenía sentido en el `.mcpb` local (el proceso corre bajo la sesión de
+        Windows de esa persona) pero **no** en este host compartido — ahí "vacío"
+        autentica como la identidad de Windows del *proceso del servidor* (hoy la
+        sesión de quien lo prueba en local; mañana el application pool de IIS), no
+        la de cada usuario remoto. Dos personas distintas dejando el usuario vacío
+        terminarían conectadas con la MISMA identidad, rompiendo el aislamiento por
+        credencial que es el punto de todo esto.
+        **Arreglado en `EndpointsDeAutorizacion.ProcesarFormulario`**: usuario y
+        clave son obligatorios ahora — error explícito si se dejan vacíos, sin caer
+        a `IntegratedSecurity`. El formulario ya no insinúa la opción de Windows.
+        *Verificado:* `dotnet build API/ADPRO.Core.csproj` en verde, 0 errores.
+        **Falta probarlo en vivo** (reiniciar el servidor local y confirmar que
+        dejar usuario/clave vacíos ahora devuelve el error, no un login exitoso).
   - [x] **Flujo completo probado en vivo, de punta a punta** — 🤖
         Login OAuth real contra `http://localhost:5250/authorize` (PKCE S256,
         credencial YOSEMITE/SincoComercial_NuevaDW con usuario/clave vacíos →
