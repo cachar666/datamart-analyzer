@@ -38,8 +38,20 @@ builder.Services.AddSingleton(new ProtectorDeCredenciales(
     // La llave NO sale de appsettings: ese archivo se versiona y se copia.
     Environment.GetEnvironmentVariable("DATAMART_LLAVE_CIFRADO")));
 
-builder.Services.AddSingleton<IAlmacenDeAutorizacion>(_ => new AlmacenDeAutorizacionEnMemoria(
-    TimeSpan.FromHours(builder.Configuration.GetValue("Auth:HorasDeToken", 8))));
+// Vacio en appsettings.json = en memoria, a proposito: asi el desarrollo local no
+// depende de tener SQL Server a mano. Con la cadena puesta (produccion, via
+// appsettings.Production.json o variable de entorno, nunca versionada en claro),
+// los tokens sobreviven a un reinicio del host — decidido en vez de Redis porque
+// es lo que ya se opera y respalda.
+builder.Services.AddSingleton<IAlmacenDeAutorizacion>(_ =>
+{
+    var vida = TimeSpan.FromHours(builder.Configuration.GetValue("Auth:HorasDeToken", 8));
+    var cadenaHost = builder.Configuration["BaseDeHost:CadenaConexion"];
+
+    return string.IsNullOrWhiteSpace(cadenaHost)
+        ? new AlmacenDeAutorizacionEnMemoria(vida)
+        : new AlmacenDeAutorizacionEnSql(cadenaHost, vida);
+});
 
 builder.Services.AddScoped<ValidadorDeCredencial>();
 

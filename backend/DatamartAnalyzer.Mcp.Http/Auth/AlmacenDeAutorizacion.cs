@@ -37,15 +37,13 @@ public interface IAlmacenDeAutorizacion
 }
 
 /// <summary>
-/// Codigos y tokens en memoria.
-///
-/// LO QUE ESTO IMPLICA, y hay que decidirlo antes de publicar: reiniciar el host
-/// invalida todos los tokens y cada persona tiene que volver a cargar sus cuatro
-/// datos. Para un servicio con un despliegue ocasional es tolerable; para uno que se
-/// actualiza seguido, no. La alternativa es un almacen distribuido (Redis, SQL), y por
-/// eso esto vive detras de una interfaz — pero NO se resuelve con un archivo local:
-/// la decision 4 del plan pide que el host no tenga estado en disco, para poder
-/// moverlo a Azure sin reescribirlo.
+/// Codigos y tokens en memoria. Solo para desarrollo local (appsettings.json sin
+/// BaseDeHost:CadenaConexion): reiniciar el host invalida todos los tokens y cada
+/// persona tiene que volver a cargar sus cuatro datos. Para producción se decidió
+/// SQL Server sobre Redis — es lo que ya se opera y respalda — en
+/// <see cref="AlmacenDeAutorizacionEnSql"/>, con el mismo contrato detras de la
+/// interfaz. Tampoco se resuelve con un archivo local: la decision 4 del plan pide
+/// que el host no tenga estado en disco, para poder moverlo a Azure sin reescribirlo.
 ///
 /// Los tokens se guardan HASHEADOS. Un volcado de memoria o un log que muestre las
 /// claves del diccionario no puede devolver un token utilizable, del mismo modo que
