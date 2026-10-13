@@ -54,6 +54,17 @@ public class AnthropicService : IAnthropicService
         _http.DefaultRequestHeaders.Add("anthropic-beta", "prompt-caching-2024-07-31");
     }
 
+    /// <summary>
+    /// Un status de error, sin el cuerpo: ni al log ni en la excepcion, que llega a la
+    /// respuesta de /api/analyze y de ahi al conector. Ver ErrorDelProveedorDeIa.
+    /// </summary>
+    private ErrorDelProveedorDeIa ErrorDe(HttpResponseMessage response, string cuerpo)
+    {
+        var error = ErrorDelProveedorDeIa.Desde("Anthropic", response.StatusCode, cuerpo);
+        _logger.LogError("Error Anthropic API: {error}", error.Message);
+        return error;
+    }
+
     public async Task<(AiRawResponse Response, UsageInfo? Usage)> AnalizarPreguntaAsync(AnalyzeRequest request)
     {
         var modelo = request.Modelo ?? _model;
@@ -95,10 +106,7 @@ public class AnthropicService : IAnthropicService
         var responseBody = await response.Content.ReadAsStringAsync();
 
         if (!response.IsSuccessStatusCode)
-        {
-            _logger.LogError("Error Anthropic API: {status} - {body}", response.StatusCode, responseBody);
-            throw new HttpRequestException($"Anthropic API error {response.StatusCode}: {responseBody}");
-        }
+            throw ErrorDe(response, responseBody);
 
         using var doc = JsonDocument.Parse(responseBody);
 
@@ -405,7 +413,7 @@ public class AnthropicService : IAnthropicService
         var responseBody = await response.Content.ReadAsStringAsync();
 
         if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Anthropic API error {response.StatusCode}: {responseBody}");
+            throw ErrorDe(response, responseBody);
 
         using var doc = System.Text.Json.JsonDocument.Parse(responseBody);
 
